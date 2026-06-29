@@ -1,0 +1,2 @@
+rootProject.name = "WinEdgeApp"
+include ':app'
