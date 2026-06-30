@@ -5,7 +5,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="Edge"
+        android:label="@string/app_name"
         android:theme="@style/Theme.WinEdge"
         android:usesCleartextTraffic="false">
 
