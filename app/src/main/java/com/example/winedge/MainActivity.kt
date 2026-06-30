@@ -1,12 +1,17 @@
 package com.example.winedge
 
 import android.annotation.SuppressLint
+import android.graphics.Color
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabsIntent
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,7 +26,39 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         webView = WebView(this)
-        setContentView(webView)
+
+        val rootLayout = FrameLayout(this)
+        rootLayout.addView(
+            webView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        val closeButton = TextView(this).apply {
+            text = "✕"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#99000000"))
+            setPadding(28, 14, 28, 14)
+            setOnClickListener {
+                if (webView.canGoBack()) {
+                    webView.goBack()
+                }
+            }
+        }
+        val closeButtonParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            topMargin = 40
+            rightMargin = 24
+        }
+        rootLayout.addView(closeButton, closeButtonParams)
+
+        setContentView(rootLayout)
 
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
@@ -40,7 +77,20 @@ class MainActivity : AppCompatActivity() {
             userAgentString = windowsEdgeUserAgent
         }
 
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: android.webkit.WebResourceRequest
+            ): Boolean {
+                val url = request.url
+                if (url.host?.contains("accounts.google.com") == true) {
+                    val customTabsIntent = CustomTabsIntent.Builder().build()
+                    customTabsIntent.launchUrl(this@MainActivity, url)
+                    return true
+                }
+                return false
+            }
+        }
 
         webView.loadUrl("https://www.bing.com")
 
