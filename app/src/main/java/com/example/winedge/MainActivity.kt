@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            topMargin = 40
+            topMargin = 80
             rightMargin = 24
         }
         rootLayout.addView(closeButton, closeButtonParams)
