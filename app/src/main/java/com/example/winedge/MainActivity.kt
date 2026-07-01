@@ -61,7 +61,7 @@ class MainActivity : AppCompatActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* user chose allow or deny */ }
+    ) { }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,10 +95,10 @@ class MainActivity : AppCompatActivity() {
         scrollView.addView(tabBar)
 
         val newTabBtn = TextView(this).apply {
-            text = " + "
-            textSize = 22f
+            text = "+"
+            textSize = 16f
             setTextColor(Color.WHITE)
-            setPadding(20, 16, 20, 16)
+            setPadding(14, 8, 14, 8)
             setOnClickListener { openNewTab("https://www.bing.com/?PC=EMMX01") }
         }
 
@@ -197,6 +197,11 @@ class MainActivity : AppCompatActivity() {
                         CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, u)
                         return true
                     }
+                    val currentUrl = view.url
+                    if (currentUrl != null && currentUrl != "about:blank") {
+                        openNewTab(u.toString())
+                        return true
+                    }
                     return false
                 }
             }
@@ -232,21 +237,21 @@ class MainActivity : AppCompatActivity() {
             val tabView = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(if (isActive) Color.parseColor("#333333") else Color.parseColor("#1F1F1F"))
-                setPadding(16, 0, 8, 0)
+                setPadding(10, 0, 4, 0)
             }
             val titleView = TextView(this).apply {
                 val t = tab.title
                 text = if (t.length > 14) t.take(14) + "…" else t
-                textSize = 13f
+                textSize = 11f
                 setTextColor(if (isActive) Color.WHITE else Color.parseColor("#AAAAAA"))
-                setPadding(0, 16, 12, 16)
+                setPadding(0, 8, 8, 8)
                 setOnClickListener { switchToTab(index) }
             }
             val closeTabBtn = TextView(this).apply {
                 text = "×"
-                textSize = 17f
+                textSize = 13f
                 setTextColor(Color.parseColor("#AAAAAA"))
-                setPadding(4, 16, 4, 16)
+                setPadding(4, 8, 4, 8)
                 setOnClickListener { closeTab(index) }
             }
             tabView.addView(titleView)
