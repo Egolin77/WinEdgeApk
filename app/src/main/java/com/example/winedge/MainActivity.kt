@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://admin.cloud.microsoft/?source=applauncher#/alladmincenters")
+        webView.loadUrl("https://m365.cloud.microsoft/apps")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
