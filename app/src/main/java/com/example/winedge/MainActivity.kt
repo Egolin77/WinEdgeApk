@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://m365.cloud.microsoft/apps")
+        webView.loadUrl("https://www.facebook.com")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
