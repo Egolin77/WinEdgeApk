@@ -52,8 +52,8 @@ class MainActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            topMargin = 80
+            gravity = Gravity.BOTTOM or Gravity.END
+            bottomMargin = 40
             rightMargin = 24
         }
         rootLayout.addView(closeButton, closeButtonParams)
@@ -78,6 +78,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                view.evaluateJavascript("""
+                    (function() {
+                        Object.defineProperty(navigator, 'maxTouchPoints', {get: function(){ return 0; }});
+                        Object.defineProperty(navigator, 'msMaxTouchPoints', {get: function(){ return 0; }});
+                    })();
+                """.trimIndent(), null)
+                super.onPageFinished(view, url)
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: android.webkit.WebResourceRequest
