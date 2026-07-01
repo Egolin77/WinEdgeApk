@@ -249,7 +249,7 @@ class MainActivity : AppCompatActivity() {
             }
             val closeTabBtn = TextView(this).apply {
                 text = "×"
-                textSize = 13f
+                textSize = 17f
                 setTextColor(Color.parseColor("#AAAAAA"))
                 setPadding(4, 8, 4, 8)
                 setOnClickListener { closeTab(index) }
