@@ -1,14 +1,19 @@
 package com.example.winedge
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
 
@@ -25,6 +30,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabBar: LinearLayout
     private lateinit var webViewContainer: FrameLayout
 
+    private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uris: Array<Uri>? = if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.clipData?.let { clip ->
+                Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
+            } ?: result.data?.data?.let { arrayOf(it) }
+        } else null
+        fileUploadCallback?.onReceiveValue(uris)
+        fileUploadCallback = null
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,19 +58,14 @@ class MainActivity : AppCompatActivity() {
         )
 
         val rootFrame = FrameLayout(this)
-
-        val mainLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val mainLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val tabBarRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#1F1F1F"))
         }
 
-        val scrollView = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-        }
+        val scrollView = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
         tabBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         scrollView.addView(tabBar)
 
@@ -60,34 +74,21 @@ class MainActivity : AppCompatActivity() {
             textSize = 22f
             setTextColor(Color.WHITE)
             setPadding(20, 16, 20, 16)
-            setOnClickListener { openNewTab("https://www.bing.com") }
+            setOnClickListener { openNewTab("https://www.bing.com/?PC=EMMX01") }
         }
 
-        tabBarRow.addView(
-            scrollView,
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        )
+        tabBarRow.addView(scrollView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         tabBarRow.addView(newTabBtn)
 
         webViewContainer = FrameLayout(this)
 
-        mainLayout.addView(
-            tabBarRow,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        )
-        mainLayout.addView(
-            webViewContainer,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        )
-
-        rootFrame.addView(
-            mainLayout,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        )
+        mainLayout.addView(tabBarRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        mainLayout.addView(webViewContainer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        rootFrame.addView(mainLayout, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
         setContentView(rootFrame)
 
-        openNewTab("https://www.bing.com")
+        openNewTab("https://www.bing.com/?PC=EMMX01")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -120,6 +121,22 @@ class MainActivity : AppCompatActivity() {
                     val idx = tabs.indexOfFirst { it.webView == view }
                     if (idx >= 0) { tabs[idx].title = title; refreshTabBar() }
                 }
+
+                override fun onShowFileChooser(
+                    webView: WebView,
+                    callback: ValueCallback<Array<Uri>>,
+                    fileChooserParams: FileChooserParams
+                ): Boolean {
+                    fileUploadCallback?.onReceiveValue(null)
+                    fileUploadCallback = callback
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    fileChooserLauncher.launch(intent)
+                    return true
+                }
             }
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
@@ -145,9 +162,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         tabs.add(Tab(webView))
-        webViewContainer.addView(webView, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
-        ))
+        webViewContainer.addView(webView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         switchToTab(tabs.size - 1)
     }
 
@@ -160,9 +175,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeTab(index: Int) {
-        if (tabs.size == 1) {
-            openNewTab("https://www.bing.com/?PC=EMMX01")
-        }
+        if (tabs.size == 1) openNewTab("https://www.bing.com/?PC=EMMX01")
         val tab = tabs[index]
         webViewContainer.removeView(tab.webView)
         tab.webView.destroy()
@@ -174,13 +187,11 @@ class MainActivity : AppCompatActivity() {
         tabBar.removeAllViews()
         tabs.forEachIndexed { index, tab ->
             val isActive = index == activeTabIndex
-
             val tabView = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setBackgroundColor(if (isActive) Color.parseColor("#333333") else Color.parseColor("#1F1F1F"))
                 setPadding(16, 0, 8, 0)
             }
-
             val titleView = TextView(this).apply {
                 val t = tab.title
                 text = if (t.length > 14) t.take(14) + "…" else t
@@ -189,7 +200,6 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, 16, 12, 16)
                 setOnClickListener { switchToTab(index) }
             }
-
             val closeTabBtn = TextView(this).apply {
                 text = "×"
                 textSize = 17f
@@ -197,10 +207,8 @@ class MainActivity : AppCompatActivity() {
                 setPadding(4, 16, 4, 16)
                 setOnClickListener { closeTab(index) }
             }
-
             tabView.addView(titleView)
             tabView.addView(closeTabBtn)
-
             tabBar.addView(tabView)
             tabBar.addView(View(this).apply {
                 setBackgroundColor(Color.parseColor("#444444"))
