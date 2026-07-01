@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -16,6 +17,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.app.NotificationManagerCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -31,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webViewContainer: FrameLayout
 
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingPermissionRequest: PermissionRequest? = null
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -44,9 +47,31 @@ class MainActivity : AppCompatActivity() {
         fileUploadCallback = null
     }
 
+    private val cameraAudioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val request = pendingPermissionRequest ?: return@registerForActivityResult
+        if (grants.values.all { it }) {
+            request.grant(request.resources)
+        } else {
+            request.deny()
+        }
+        pendingPermissionRequest = null
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* user chose allow or deny */ }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
 
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
@@ -115,6 +140,7 @@ class MainActivity : AppCompatActivity() {
                 loadWithOverviewMode = true
                 useWideViewPort = true
                 userAgentString = windowsEdgeUserAgent
+                mediaPlaybackRequiresUserGesture = false
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onReceivedTitle(view: WebView, title: String) {
@@ -136,6 +162,22 @@ class MainActivity : AppCompatActivity() {
                     }
                     fileChooserLauncher.launch(intent)
                     return true
+                }
+
+                override fun onPermissionRequest(request: PermissionRequest) {
+                    val androidPermissions = mutableListOf<String>()
+                    if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
+                        androidPermissions.add(android.Manifest.permission.CAMERA)
+                    }
+                    if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                        androidPermissions.add(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                    if (androidPermissions.isEmpty()) {
+                        request.deny()
+                        return
+                    }
+                    pendingPermissionRequest = request
+                    cameraAudioPermissionLauncher.launch(androidPermissions.toTypedArray())
                 }
             }
             webViewClient = object : WebViewClient() {
