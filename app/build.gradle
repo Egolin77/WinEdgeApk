@@ -8,7 +8,7 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "windows copilot"
+        applicationId "com.example.windowscopilot"
         minSdk 24
         targetSdk 34
         versionCode 1
