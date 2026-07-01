@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://www.bing.com/?PC=EMMX01")
+        webView.loadUrl("https://admin.cloud.microsoft/?source=applauncher#/alladmincenters")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
