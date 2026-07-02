@@ -4,11 +4,12 @@ plugins {
 }
 
 android {
-    namespace 'com.example.windows'
+    namespace 'com.example.winedge'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.bing"
+        
+    applicationId "com.nilfisk.talkdesk"
         minSdk 24
         targetSdk 34
         versionCode 1
