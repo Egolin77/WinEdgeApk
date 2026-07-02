@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace 'com.example.winedge'
+    namespace 'com.example.adobe'
     compileSdk 34
 
     defaultConfig {
