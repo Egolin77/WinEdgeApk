@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity() {
 
                 val u = request.url
 
-                if (u.host?.contains("accounts.google.com") == true) {
+                if (u.host?.contains("accounts.omega.com") == true) {
 
                     CustomTabsIntent.Builder()
                         .build()
@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://portal.azure.com")
+        webView.loadUrl("https://www.google.com")
 
         onBackPressedDispatcher.addCallback(
             this,
