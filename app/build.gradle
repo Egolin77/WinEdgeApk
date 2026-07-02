@@ -8,8 +8,8 @@ android {
     compileSdk 34
 
     defaultConfig {
-        
-    applicationId "com.nilfisk.google"
+
+        applicationId "com.example.azure"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -29,6 +29,19 @@ android {
 
     kotlinOptions {
         jvmTarget = '1.8'
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+
+            def appName = defaultConfig.applicationId
+                    .replace("com.nilfisk.", "")
+                    .replace(".", "-")
+
+            def timestamp = new Date().format("yyyyMMdd-HHmmss")
+
+            outputFileName = "${appName}-${timestamp}.apk"
+        }
     }
 }
 
