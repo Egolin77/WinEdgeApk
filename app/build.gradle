@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         
-    applicationId "com.nilfisk.talkdesk"
+    applicationId "com.nilfisk.adobe"
         minSdk 24
         targetSdk 34
         versionCode 1
