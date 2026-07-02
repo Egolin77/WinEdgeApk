@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         
-    applicationId "com.nilfisk.adobe"
+    applicationId "com.nilfisk.azure"
         minSdk 24
         targetSdk 34
         versionCode 1
