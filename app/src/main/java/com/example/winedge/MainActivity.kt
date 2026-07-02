@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://www.google.com")
+        webView.loadUrl(AppConfig.URL)
 
         onBackPressedDispatcher.addCallback(
             this,
