@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.talkdesk'
+    namespace 'com.example.windows'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.talkdesk"
+        applicationId "com.example.bing"
         minSdk 24
         targetSdk 34
         versionCode 1
