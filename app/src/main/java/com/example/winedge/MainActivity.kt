@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://www.adobe.com")
+        webView.loadUrl("https://nilfisk.talkdeskid.eu/login")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
