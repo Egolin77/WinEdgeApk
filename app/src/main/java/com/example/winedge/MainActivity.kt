@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        webView.loadUrl("https://nilfisk.service-now.com/?sysparm_device=doctype")
+        webView.loadUrl("https://adminconsole.adobe.com")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
