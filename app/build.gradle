@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.adobe'
+    namespace 'com.example.talkdesk'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.adobe"
+        applicationId "com.example.talkdesk"
         minSdk 24
         targetSdk 34
         versionCode 1
