@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://www.bing.com"
+    private val startUrl = "https://script.google.com/macros/s/AKfycbwoytNsui-y7jXl8xDGAe000MSRriz9vhaVqnPFibY/dev"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
