@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
@@ -23,20 +24,25 @@ class MainActivity : AppCompatActivity() {
 
     private val windowsEdgeUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
 
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
+    private val startUrl = "https://www.bing.com"
+
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+
         val uris: Array<Uri>? = if (result.resultCode == Activity.RESULT_OK) {
             result.data?.clipData?.let { clip ->
                 Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
             } ?: result.data?.data?.let { arrayOf(it) }
-        } else null
+        } else {
+            null
+        }
 
         fileUploadCallback?.onReceiveValue(uris)
         fileUploadCallback = null
@@ -86,7 +92,35 @@ class MainActivity : AppCompatActivity() {
         webView = WebView(this)
         setContentView(webView)
 
-        webView.settings.apply {
+        configureWebView(webView)
+
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
+        webView.webViewClient = createMainWebViewClient()
+        webView.webChromeClient = createMainWebChromeClient()
+
+        webView.loadUrl(startUrl)
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+
+                override fun handleOnBackPressed() {
+                    if (webView.canGoBack()) {
+                        webView.goBack()
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+            }
+        )
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun configureWebView(targetWebView: WebView) {
+        targetWebView.settings.apply {
 
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -105,12 +139,24 @@ class MainActivity : AppCompatActivity() {
 
             userAgentString = windowsEdgeUserAgent
         }
+    }
 
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance()
-            .setAcceptThirdPartyCookies(webView, true)
+    private fun createMainWebViewClient(): WebViewClient {
+        return object : WebViewClient() {
 
-        webView.webChromeClient = object : WebChromeClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+
+                val uri = request.url
+                return handleUrl(uri)
+            }
+        }
+    }
+
+    private fun createMainWebChromeClient(): WebChromeClient {
+        return object : WebChromeClient() {
 
             override fun onShowFileChooser(
                 webView: WebView,
@@ -136,22 +182,12 @@ class MainActivity : AppCompatActivity() {
 
                 val androidPermissions = mutableListOf<String>()
 
-                if (request.resources.contains(
-                        PermissionRequest.RESOURCE_VIDEO_CAPTURE
-                    )
-                ) {
-                    androidPermissions.add(
-                        android.Manifest.permission.CAMERA
-                    )
+                if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
+                    androidPermissions.add(android.Manifest.permission.CAMERA)
                 }
 
-                if (request.resources.contains(
-                        PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                    )
-                ) {
-                    androidPermissions.add(
-                        android.Manifest.permission.RECORD_AUDIO
-                    )
+                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                    androidPermissions.add(android.Manifest.permission.RECORD_AUDIO)
                 }
 
                 if (androidPermissions.isEmpty()) {
@@ -165,46 +201,73 @@ class MainActivity : AppCompatActivity() {
                     androidPermissions.toTypedArray()
                 )
             }
-        }
 
-        webView.webViewClient = object : WebViewClient() {
-
-            override fun shouldOverrideUrlLoading(
+            override fun onCreateWindow(
                 view: WebView,
-                request: WebResourceRequest
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message
             ): Boolean {
 
-                val u = request.url
+                val popupWebView = WebView(this@MainActivity)
 
-                if (u.host?.contains("accounts.google.com") == true) {
+                configureWebView(popupWebView)
 
-                    CustomTabsIntent.Builder()
-                        .build()
-                        .launchUrl(this@MainActivity, u)
+                CookieManager.getInstance().setAcceptCookie(true)
+                CookieManager.getInstance().setAcceptThirdPartyCookies(popupWebView, true)
 
-                    return true
-                }
+                popupWebView.webViewClient = object : WebViewClient() {
 
-                return false
-            }
-        }
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest
+                    ): Boolean {
 
-        webView.loadUrl("https://www.bing.com")
+                        val uri = request.url
 
-        onBackPressedDispatcher.addCallback(
-            this,
-            object : OnBackPressedCallback(true) {
+                        if (handleUrl(uri)) {
+                            popupWebView.destroy()
+                            return true
+                        }
 
-                override fun handleOnBackPressed() {
-
-                    if (webView.canGoBack()) {
-                        webView.goBack()
-                    } else {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
+                        webView.loadUrl(uri.toString())
+                        popupWebView.destroy()
+                        return true
                     }
                 }
+
+                val transport = resultMsg.obj as WebView.WebViewTransport
+                transport.webView = popupWebView
+                resultMsg.sendToTarget()
+
+                return true
             }
-        )
+        }
+    }
+
+    private fun handleUrl(uri: Uri): Boolean {
+
+        val scheme = uri.scheme ?: return false
+        val host = uri.host ?: ""
+
+        if (host.contains("accounts.google.com")) {
+            CustomTabsIntent.Builder()
+                .build()
+                .launchUrl(this@MainActivity, uri)
+
+            return true
+        }
+
+        if (scheme == "http" || scheme == "https") {
+            return false
+        }
+
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            true
+        }
     }
 }
