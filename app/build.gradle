@@ -31,18 +31,7 @@ android {
         jvmTarget = '1.8'
     }
 
-    applicationVariants.all { variant ->
-        variant.outputs.all {
-
-            def appName = defaultConfig.applicationId
-                    .replace("com.nilfisk.", "")
-                    .replace(".", "-")
-
-            def timestamp = new Date().format("yyyyMMdd-HHmmss")
-
-            outputFileName = "${appName}-${timestamp}.apk"
-        }
-    }
+    
 }
 
 dependencies {
