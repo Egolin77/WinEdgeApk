@@ -210,7 +210,6 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
 
                 val popupWebView = WebView(this@MainActivity)
-
                 configureWebView(popupWebView)
 
                 CookieManager.getInstance().setAcceptCookie(true)
@@ -234,6 +233,22 @@ class MainActivity : AppCompatActivity() {
                         popupWebView.destroy()
                         return true
                     }
+
+                    // Elkapja azokat az átirányításokat is, amiknél a shouldOverrideUrlLoading nem fut le időben
+                    override fun onPageStarted(
+                        view: WebView?,
+                        url: String?,
+                        favicon: android.graphics.Bitmap?
+                    ) {
+                        url?.let {
+                            val uri = Uri.parse(it)
+                            if (handleUrl(uri)) {
+                                popupWebView.destroy()
+                                return
+                            }
+                        }
+                        super.onPageStarted(view, url, favicon)
+                    }
                 }
 
                 val transport = resultMsg.obj as WebView.WebViewTransport
@@ -250,7 +265,8 @@ class MainActivity : AppCompatActivity() {
         val scheme = uri.scheme ?: return false
         val host = uri.host ?: ""
 
-        if (host.contains("accounts.google.com")) {
+        // Minden Google fiókkal kapcsolatos hitelesítési URL kiszűrése és külső megnyitása
+        if (host.contains("accounts.google.com") || host.contains("google.com/accounts")) {
             CustomTabsIntent.Builder()
                 .build()
                 .launchUrl(this@MainActivity, uri)
