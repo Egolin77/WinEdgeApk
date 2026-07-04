@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://nilfisk.service-now.com/?sysparm_device=doctype"
+    private val startUrl = "https://nilfisk.talkdeskid.eu/login"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
