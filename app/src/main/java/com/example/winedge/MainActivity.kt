@@ -1,20 +1,24 @@
-
 package com.example.winedge
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -36,7 +40,6 @@ class MainActivity : AppCompatActivity() {
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-
         val uris: Array<Uri>? = if (result.resultCode == Activity.RESULT_OK) {
             result.data?.clipData?.let { clip ->
                 Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
@@ -44,7 +47,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             null
         }
-
         fileUploadCallback?.onReceiveValue(uris)
         fileUploadCallback = null
     }
@@ -52,16 +54,12 @@ class MainActivity : AppCompatActivity() {
     private val cameraAudioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-
-        val request = pendingPermissionRequest
-            ?: return@registerForActivityResult
-
+        val request = pendingPermissionRequest ?: return@registerForActivityResult
         if (grants.values.all { it }) {
             request.grant(request.resources)
         } else {
             request.deny()
         }
-
         pendingPermissionRequest = null
     }
 
@@ -101,12 +99,14 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = createMainWebViewClient()
         webView.webChromeClient = createMainWebChromeClient()
 
+        // --- ITT TÖRTÉNIK A VARÁZSLAT: Letöltéskezelő hozzáadása ---
+        setupDownloadListener(webView)
+
         webView.loadUrl(startUrl)
 
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
-
                 override fun handleOnBackPressed() {
                     if (webView.canGoBack()) {
                         webView.goBack()
@@ -122,34 +122,54 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(targetWebView: WebView) {
         targetWebView.settings.apply {
-
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-
             loadWithOverviewMode = true
             useWideViewPort = true
-
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
-
             allowFileAccess = true
             allowContentAccess = true
-
             mediaPlaybackRequiresUserGesture = false
-
             userAgentString = windowsEdgeUserAgent
+        }
+    }
+
+    // Új függvény a letöltések kezelésére
+    private fun setupDownloadListener(targetWebView: WebView) {
+        targetWebView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            try {
+                val request = DownloadManager.Request(Uri.parse(url)).apply {
+                    // Sütik átadása, hogy a bejelentkezéshez kötött letöltések is működjenek
+                    val cookies = CookieManager.getInstance().getCookie(url)
+                    addRequestHeader("cookie", cookies)
+                    addRequestHeader("User-Agent", userAgent)
+                    
+                    // Értesítés megjelenítése a letöltés alatt és után
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    
+                    // Fájlnév kinyerése a linkből vagy a szerver válaszából
+                    val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                }
+
+                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                downloadManager.enqueue(request)
+
+                Toast.makeText(this, "Letöltés elindult...", Toast.makeText.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Hiba a letöltés során: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     private fun createMainWebViewClient(): WebViewClient {
         return object : WebViewClient() {
-
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
             ): Boolean {
-
                 val uri = request.url
                 return handleUrl(uri)
             }
@@ -158,13 +178,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun createMainWebChromeClient(): WebChromeClient {
         return object : WebChromeClient() {
-
             override fun onShowFileChooser(
                 webView: WebView,
                 callback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-
                 fileUploadCallback?.onReceiveValue(null)
                 fileUploadCallback = callback
 
@@ -173,34 +191,24 @@ class MainActivity : AppCompatActivity() {
                     type = "*/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 }
-
                 fileChooserLauncher.launch(intent)
-
                 return true
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-
                 val androidPermissions = mutableListOf<String>()
-
                 if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
                     androidPermissions.add(android.Manifest.permission.CAMERA)
                 }
-
                 if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
                     androidPermissions.add(android.Manifest.permission.RECORD_AUDIO)
                 }
-
                 if (androidPermissions.isEmpty()) {
                     request.deny()
                     return
                 }
-
                 pendingPermissionRequest = request
-
-                cameraAudioPermissionLauncher.launch(
-                    androidPermissions.toTypedArray()
-                )
+                cameraAudioPermissionLauncher.launch(androidPermissions.toTypedArray())
             }
 
             override fun onCreateWindow(
@@ -209,28 +217,25 @@ class MainActivity : AppCompatActivity() {
                 isUserGesture: Boolean,
                 resultMsg: Message
             ): Boolean {
-
                 val popupWebView = WebView(this@MainActivity)
-
                 configureWebView(popupWebView)
-
+                
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(popupWebView, true)
+                
+                // A felugró ablakokra is rárakjuk a letöltésfigyelőt, biztos ami biztos
+                setupDownloadListener(popupWebView)
 
                 popupWebView.webViewClient = object : WebViewClient() {
-
                     override fun shouldOverrideUrlLoading(
                         view: WebView,
                         request: WebResourceRequest
                     ): Boolean {
-
                         val uri = request.url
-
                         if (handleUrl(uri)) {
                             popupWebView.destroy()
                             return true
                         }
-
                         webView.loadUrl(uri.toString())
                         popupWebView.destroy()
                         return true
@@ -240,14 +245,12 @@ class MainActivity : AppCompatActivity() {
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = popupWebView
                 resultMsg.sendToTarget()
-
                 return true
             }
         }
     }
 
     private fun handleUrl(uri: Uri): Boolean {
-
         val scheme = uri.scheme ?: return false
         val host = uri.host ?: ""
 
@@ -255,7 +258,6 @@ class MainActivity : AppCompatActivity() {
             CustomTabsIntent.Builder()
                 .build()
                 .launchUrl(this@MainActivity, uri)
-
             return true
         }
 
