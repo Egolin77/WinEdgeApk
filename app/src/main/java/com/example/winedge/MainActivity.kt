@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://www.tiktok.com"
+    private val startUrl = "https://github.com"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
