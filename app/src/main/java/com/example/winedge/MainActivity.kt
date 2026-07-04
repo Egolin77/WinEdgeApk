@@ -157,7 +157,11 @@ class MainActivity : AppCompatActivity() {
                 val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                 downloadManager.enqueue(request)
 
-                Toast.makeText(this, "Letöltés elindult...", Toast.makeText.LENGTH_SHORT).show()
+                // HELYES:
+Toast.makeText(this, "Letöltés elindult...", Toast.LENGTH_SHORT).show()
+
+
+               // Toast.makeText(this, "Letöltés elindult...", Toast.makeText.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "Hiba a letöltés során: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
