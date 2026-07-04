@@ -16,6 +16,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -35,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://bing.com"
+    private val startUrl = "https://github.com"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -88,7 +89,7 @@ class MainActivity : AppCompatActivity() {
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
             )
 
-        // Dinamikus konténer a belső ablakok kezeléséhez
+        // Dinamikus konténer a főoldal és a felugró ablakok egymásra pakolásához
         container = FrameLayout(this)
         setContentView(container)
 
@@ -96,6 +97,11 @@ class MainActivity : AppCompatActivity() {
         container.addView(webView)
 
         configureWebView(webView)
+
+        // LETÖLTÉS KEZELŐ A FŐ ABLAKHOZ
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            setupDownload(url, userAgent, contentDisposition, mimetype)
+        }
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -188,14 +194,13 @@ class MainActivity : AppCompatActivity() {
                 cameraAudioPermissionLauncher.launch(androidPermissions.toTypedArray())
             }
 
-            // Amikor egy gomb új ablakot/popupot nyit meg (pl. bejelentkezési opciók)
+            // Új belső ablak (popup) létrehozása, ha a weboldal kéri (pl. bejelentkezések)
             override fun onCreateWindow(
                 view: WebView,
                 isDialog: Boolean,
                 isUserGesture: Boolean,
                 resultMsg: Message
             ): Boolean {
-                // Ha már volt nyitva egy belső ablak, azt eltávolítjuk
                 popupWebView?.let {
                     container.removeView(it)
                     it.destroy()
@@ -209,6 +214,11 @@ class MainActivity : AppCompatActivity() {
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
 
+                // LETÖLTÉS KEZELŐ A FELUGRÓ ABLAKHOZ
+                newPopup.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+                    setupDownload(url, userAgent, contentDisposition, mimetype)
+                }
+
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(newPopup, true)
 
@@ -220,7 +230,7 @@ class MainActivity : AppCompatActivity() {
                         return handleUrl(request.url)
                     }
 
-                    // A Google OAuth hajlamos azonnal betölteni a célt, itt is ellenőrizzük
+                    // Azonnali Google OAuth átirányítás elkapása a felugró ablakban
                     override fun onPageStarted(
                         view: WebView?,
                         url: String?,
@@ -239,7 +249,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Ráhelyezzük a képernyőre a fő weboldal fölé (belül marad)
+                // Megjelenítjük a felugró ablakot az appon belül a főoldal felett
                 container.addView(newPopup)
                 popupWebView = newPopup
 
@@ -261,7 +271,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Segédfüggvény annak eldöntésére, hogy Google bejelentkezésről van-e szó
     private fun isGoogleAuth(uri: Uri): Boolean {
         val host = uri.host ?: ""
         return host.contains("accounts.google.com") || host.contains("google.com/accounts")
@@ -270,7 +279,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
 
-        // KIVÉTEL: Ha Google-fiók bejelentkezés, AKKOR és csakis AKKOR használhatja a biztonságos Custom Tabs-ot
+        // KIVÉTEL: Kizárólag a Google bejelentkezés használhatja a rendszerszintű biztonságos motort (Custom Tabs)
         if (isGoogleAuth(uri)) {
             CustomTabsIntent.Builder()
                 .build()
@@ -278,18 +287,38 @@ class MainActivity : AppCompatActivity() {
             return true
         }
 
-        // Minden egyéb normál webes forgalom (http/https) szigorúan BELÜL marad
+        // Minden egyéb HTTP/HTTPS forgalom szigorúan az appon belül marad (nincs külső böngésző)
         if (scheme == "http" || scheme == "https") {
             return false 
         }
 
-        // Nem webes linkek (pl. telefonhívás: tel:, email: mailto:), amiket a WebView eleve nem tud megnyitni
+        // Nem webes protokollok (pl. tel:, mailto:, intent:) átadása a rendszernek, amit a WebView nem tudna megnyitni
         return try {
             val intent = Intent(Intent.ACTION_VIEW, uri)
             startActivity(intent)
             true
         } catch (_: Exception) {
             true
+        }
+    }
+
+    // Közös letöltési logika a DownloadManager segítségével
+    private fun setupDownload(url: String, userAgent: String, contentDisposition: String, mimetype: String) {
+        try {
+            val request = android.app.DownloadManager.Request(Uri.parse(url)).apply {
+                setMimeType(mimetype)
+                val cookies = CookieManager.getInstance().getCookie(url)
+                addRequestHeader("cookie", cookies)
+                addRequestHeader("User-Agent", userAgent)
+                setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                val fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype)
+                setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+            }
+            val dm = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
+            dm.enqueue(request)
+            Toast.makeText(this, "Letöltés elindult...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Letöltési hiba: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
