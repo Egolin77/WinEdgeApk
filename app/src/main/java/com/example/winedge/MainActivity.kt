@@ -89,7 +89,6 @@ class MainActivity : AppCompatActivity() {
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
             )
 
-        // Dinamikus konténer a főoldal és a felugró ablakok egymásra pakolásához
         container = FrameLayout(this)
         setContentView(container)
 
@@ -98,7 +97,6 @@ class MainActivity : AppCompatActivity() {
 
         configureWebView(webView)
 
-        // LETÖLTÉS KEZELŐ A FŐ ABLAKHOZ
         webView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
             setupDownload(url, userAgent, contentDisposition, mimetype)
         }
@@ -115,7 +113,6 @@ class MainActivity : AppCompatActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    // Ha van nyitva belső felugró ablak, azt zárjuk be előbb
                     if (popupWebView != null) {
                         container.removeView(popupWebView)
                         popupWebView?.destroy()
@@ -194,7 +191,6 @@ class MainActivity : AppCompatActivity() {
                 cameraAudioPermissionLauncher.launch(androidPermissions.toTypedArray())
             }
 
-            // Új belső ablak (popup) létrehozása, ha a weboldal kéri (pl. bejelentkezések)
             override fun onCreateWindow(
                 view: WebView,
                 isDialog: Boolean,
@@ -214,7 +210,6 @@ class MainActivity : AppCompatActivity() {
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
 
-                // LETÖLTÉS KEZELŐ A FELUGRÓ ABLAKHOZ
                 newPopup.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
                     setupDownload(url, userAgent, contentDisposition, mimetype)
                 }
@@ -230,7 +225,6 @@ class MainActivity : AppCompatActivity() {
                         return handleUrl(request.url)
                     }
 
-                    // Azonnali Google OAuth átirányítás elkapása a felugró ablakban
                     override fun onPageStarted(
                         view: WebView?,
                         url: String?,
@@ -249,7 +243,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                // Megjelenítjük a felugró ablakot az appon belül a főoldal felett
                 container.addView(newPopup)
                 popupWebView = newPopup
 
@@ -279,7 +272,6 @@ class MainActivity : AppCompatActivity() {
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
 
-        // KIVÉTEL: Kizárólag a Google bejelentkezés használhatja a rendszerszintű biztonságos motort (Custom Tabs)
         if (isGoogleAuth(uri)) {
             CustomTabsIntent.Builder()
                 .build()
@@ -287,12 +279,10 @@ class MainActivity : AppCompatActivity() {
             return true
         }
 
-        // Minden egyéb HTTP/HTTPS forgalom szigorúan az appon belül marad (nincs külső böngésző)
         if (scheme == "http" || scheme == "https") {
             return false 
         }
 
-        // Nem webes protokollok (pl. tel:, mailto:, intent:) átadása a rendszernek, amit a WebView nem tudna megnyitni
         return try {
             val intent = Intent(Intent.ACTION_VIEW, uri)
             startActivity(intent)
@@ -302,7 +292,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Közös letöltési logika a DownloadManager segítségével
     private fun setupDownload(url: String, userAgent: String, contentDisposition: String, mimetype: String) {
         try {
             val request = android.app.DownloadManager.Request(Uri.parse(url)).apply {
