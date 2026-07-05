@@ -36,7 +36,7 @@ private val windowsEdgeUserAgent =
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://m365.cloud.microsoft"
+    private val startUrl = "https://www.bing.com"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
