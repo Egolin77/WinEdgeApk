@@ -123,7 +123,7 @@ private val windowsEdgeUserAgent =
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(targetWebView: WebView) {
         // Hardveres gyorsítás kényszerítése a HTML5 Canvas (Excel grid) sima kirajzolásához
-        targetWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        targetWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
 
         targetWebView.settings.apply {
             javaScriptEnabled = true
