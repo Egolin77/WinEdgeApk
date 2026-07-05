@@ -118,23 +118,41 @@ class MainActivity : AppCompatActivity() {
             }
         )
     }
+@SuppressLint("SetJavaScriptEnabled")
+private fun configureWebView(targetWebView: WebView) {
+    // Kényszerítsük a hardveres grafikus réteget a Canvas sima kirajzolásához
+    targetWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView(targetWebView: WebView) {
-        targetWebView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            javaScriptCanOpenWindowsAutomatically = true
-            setSupportMultipleWindows(true)
-            allowFileAccess = true
-            allowContentAccess = true
-            mediaPlaybackRequiresUserGesture = false
-            userAgentString = windowsEdgeUserAgent
-        }
+    targetWebView.settings.apply {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        databaseEnabled = true
+        
+        // Asztali nézetnél ezek elengedhetetlenek a helyes méretezéshez:
+        loadWithOverviewMode = true
+        useWideViewPort = true
+        
+        javaScriptCanOpenWindowsAutomatically = true
+        setSupportMultipleWindows(true)
+        allowFileAccess = true
+        allowContentAccess = true
+        mediaPlaybackRequiresUserGesture = false
+        
+        userAgentString = windowsEdgeUserAgent
+
+        // --- EZEK JAVÍTJÁK AZ ASZTALI CANVAS / BETŰ ELCSÚSZÁST ---
+        
+        // Megakadályozza, hogy az Android egyedi betűméret-skálázása felülírja az asztali layoutot
+        textZoom = 100 
+
+        // Engedélyezi a webes grafikus motoroknak a lokális adatbázisok használatát a betűtípusok gyorsítótárazásához
+        appCacheEnabled = true // Régebbi SDK-khoz, ha a fordító aláhúzza, elhagyható
+        
+        // Lehetővé teszi a WebView számára, hogy meta-tagek alapján maga menedzselje a sűrűséget
+        @Suppress("DEPRECATION")
+        renderPriority = android.webkit.WebSettings.RenderPriority.HIGH
     }
+}
 
     // Új függvény a letöltések kezelésére
     private fun setupDownloadListener(targetWebView: WebView) {
