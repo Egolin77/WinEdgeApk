@@ -16,6 +16,7 @@ import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -42,8 +43,8 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         val uris: Array<Uri>? = if (result.resultCode == Activity.RESULT_OK) {
             result.data?.clipData?.let { clip ->
-                Array(clip.itemCount) { i -> clip.getItemAt(i).uri }
-            } ?: result.data?.data?.let { arrayOf(it) }
+                Array(clip.itemCount) { index -> clip.getItemAt(index).uri }
+            } ?: result.data?.data?.let { uri -> arrayOf(uri) }
         } else {
             null
         }
@@ -85,13 +86,12 @@ class MainActivity : AppCompatActivity() {
         NotificationHelper.createWebActivityNotificationChannel(this)
 
         @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-            )
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_FULLSCREEN
 
         webView = WebView(this)
         setContentView(webView)
@@ -161,96 +161,7 @@ class MainActivity : AppCompatActivity() {
             userAgentString = windowsEdgeUserAgent
             textZoom = 100
 
-            mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        }
-    }
-
-    private fun setupDownloadListener(targetWebView: WebView) {
-        targetWebView.addJavascriptInterface(
-            BlobDownloadInterface(this),
-            "AndroidBlobDownloader"
-        )
-
-        targetWebView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-            if (url.startsWith("blob:")) {
-                val safeUrl = url.replace("'", "\\'")
-                val safeMimeType = mimetype.replace("'", "\\'")
-                val safeContentDisposition = contentDisposition.replace("'", "\\'")
-
-                val jsCode = """
-                    (function() {
-                        var xhr = new XMLHttpRequest();
-                        xhr.open('GET', '$safeUrl', true);
-                        xhr.responseType = 'blob';
-                        xhr.onload = function() {
-                            if (this.status == 200) {
-                                var blob = this.response;
-                                var reader = new FileReader();
-                                reader.readAsDataURL(blob);
-                                reader.onloadend = function() {
-                                    var base64data = reader.result;
-                                    AndroidBlobDownloader.processBlob(
-                                        base64data,
-                                        '$safeMimeType',
-                                        '$safeContentDisposition'
-                                    );
-                                };
-                            }
-                        };
-                        xhr.send();
-                    })();
-                """.trimIndent()
-
-                targetWebView.evaluateJavascript(jsCode, null)
-                Toast.makeText(
-                    this,
-                    "Dinamikus tartalom feldolgozása...",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                try {
-                    val request = DownloadManager.Request(Uri.parse(url)).apply {
-                        val cookies = CookieManager.getInstance().getCookie(url)
-
-                        if (!cookies.isNullOrBlank()) {
-                            addRequestHeader("cookie", cookies)
-                        }
-
-                        addRequestHeader("User-Agent", userAgent)
-                        setNotificationVisibility(
-                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-                        )
-
-                        val fileName = URLUtil.guessFileName(
-                            url,
-                            contentDisposition,
-                            mimetype
-                        )
-
-                        setDestinationInExternalPublicDir(
-                            Environment.DIRECTORY_DOWNLOADS,
-                            fileName
-                        )
-                    }
-
-                    val downloadManager =
-                        getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-
-                    downloadManager.enqueue(request)
-
-                    Toast.makeText(
-                        this,
-                        "Letöltés elindult...",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } catch (e: Exception) {
-                    Toast.makeText(
-                        this,
-                        "Hiba a letöltés során: ${e.localizedMessage}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
     }
 
@@ -261,8 +172,7 @@ class MainActivity : AppCompatActivity() {
                 view: WebView,
                 request: WebResourceRequest
             ): Boolean {
-                val uri = request.url
-                return handleUrl(uri)
+                return handleUrl(request.url)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -390,152 +300,102 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupDownloadListener(targetWebView: WebView) {
+        targetWebView.addJavascriptInterface(
+            BlobDownloadInterface(this),
+            "AndroidBlobDownloader"
+        )
+
+        targetWebView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            val safeMimeType = mimetype ?: "application/octet-stream"
+            val safeDisposition = contentDisposition ?: ""
+
+            if (url.startsWith("blob:")) {
+                val safeUrl = url.replace("'", "\\'")
+                val safeMime = safeMimeType.replace("'", "\\'")
+                val safeContentDisposition = safeDisposition.replace("'", "\\'")
+
+                val jsCode = """
+                    (function() {
+                        var xhr = new XMLHttpRequest();
+                        xhr.open('GET', '$safeUrl', true);
+                        xhr.responseType = 'blob';
+                        xhr.onload = function() {
+                            if (this.status === 200) {
+                                var blob = this.response;
+                                var reader = new FileReader();
+                                reader.readAsDataURL(blob);
+                                reader.onloadend = function() {
+                                    AndroidBlobDownloader.processBlob(
+                                        reader.result,
+                                        '$safeMime',
+                                        '$safeContentDisposition'
+                                    );
+                                };
+                            }
+                        };
+                        xhr.send();
+                    })();
+                """.trimIndent()
+
+                targetWebView.evaluateJavascript(jsCode, null)
+
+                Toast.makeText(
+                    this,
+                    "Dinamikus tartalom feldolgozása...",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                try {
+                    val request = DownloadManager.Request(Uri.parse(url)).apply {
+                        val cookies = CookieManager.getInstance().getCookie(url)
+
+                        if (!cookies.isNullOrBlank()) {
+                            addRequestHeader("cookie", cookies)
+                        }
+
+                        addRequestHeader("User-Agent", userAgent)
+                        setNotificationVisibility(
+                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                        )
+
+                        val fileName = URLUtil.guessFileName(
+                            url,
+                            safeDisposition,
+                            safeMimeType
+                        )
+
+                        setDestinationInExternalPublicDir(
+                            Environment.DIRECTORY_DOWNLOADS,
+                            fileName
+                        )
+                    }
+
+                    val downloadManager =
+                        getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+                    downloadManager.enqueue(request)
+
+                    Toast.makeText(
+                        this,
+                        "Letöltés elindult...",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } catch (e: Exception) {
+                    Toast.makeText(
+                        this,
+                        "Hiba a letöltés során: ${e.localizedMessage}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
     private fun injectUniversalNotificationWatcher(targetWebView: WebView) {
-        val js = """
-            (function() {
-                if (window.__WinEdgeUniversalWatcherInstalled) {
-                    return;
-                }
-
-                window.__WinEdgeUniversalWatcherInstalled = true;
-
-                var lastSignal = "";
-                var lastSignalAt = 0;
-
-                function now() {
-                    return Date.now();
-                }
-
-                function safeText(value) {
-                    if (!value) return "";
-                    return String(value)
-                        .replace(/\s+/g, " ")
-                        .trim()
-                        .substring(0, 240);
-                }
-
-                function sendSignal(title, message) {
-                    try {
-                        var currentUrl = location.href || "";
-                        var cleanTitle = safeText(title || document.title || "Web activity detected");
-                        var cleanMessage = safeText(message || "Possible new activity on this page");
-
-                        var signal = cleanTitle + "|" + cleanMessage + "|" + currentUrl;
-                        var t = now();
-
-                        if (signal === lastSignal && (t - lastSignalAt) < 60000) return;
-                        if ((t - lastSignalAt) < 8000) return;
-
-                        lastSignal = signal;
-                        lastSignalAt = t;
-
-                        if (window.WinEdgeNotifier && window.WinEdgeNotifier.notifyFromWeb) {
-                            window.WinEdgeNotifier.notifyFromWeb(
-                                cleanTitle,
-                                cleanMessage,
-                                currentUrl
-                            );
-                        }
-                    } catch (e) {}
-                }
-
-                function titleLooksLikeNotification(title) {
-                    if (!title) return false;
-
-                    var t = title.toLowerCase();
-
-                    if (/^$$\d+$$/.test(t)) return true;
-                    if (/\b\d+\s+(new|unread|notification|message|messages)\b/.test(t)) return true;
-                    if (t.indexOf("new message") >= 0) return true;
-                    if (t.indexOf("unread") >= 0) return true;
-                    if (t.indexOf("notification") >= 0) return true;
-                    if (t.indexOf("értesítés") >= 0) return true;
-                    if (t.indexOf("üzenet") >= 0) return true;
-                    if (t.indexOf("új üzenet") >= 0) return true;
-
-                    return false;
-                }
-
-                var lastTitle = document.title || "";
-
-                setInterval(function() {
-                    try {
-                        var currentTitle = document.title || "";
-
-                        if (currentTitle !== lastTitle) {
-                            lastTitle = currentTitle;
-
-                            if (titleLooksLikeNotification(currentTitle)) {
-                                sendSignal("Web notification", currentTitle);
-                            }
-                        }
-                    } catch (e) {}
-                }, 3000);
-
-                function detectBadges() {
-                    try {
-                        var selectors = [
-                            "[aria-label*='unread' i]",
-                            "[aria-label*='notification' i]",
-                            "[aria-label*='message' i]",
-                            "[aria-label*='new' i]",
-                            "[aria-label*='értesítés' i]",
-                            "[aria-label*='üzenet' i]",
-                            "[aria-label*='új' i]",
-                            "[title*='unread' i]",
-                            "[title*='notification' i]",
-                            "[title*='message' i]",
-                            "[title*='new' i]",
-                            "[title*='értesítés' i]",
-                            "[title*='üzenet' i]",
-                            "[data-testid*='badge' i]",
-                            "[data-testid*='notification' i]",
-                            "[data-testid*='unread' i]",
-                            "[class*='badge' i]",
-                            "[class*='unread' i]",
-                            "[class*='notification' i]",
-                            "[class*='counter' i]",
-                            "[class*='count' i]"
-                        ];
-
-                        var foundTexts = [];
-
-                        selectors.forEach(function(selector) {
-                            var nodes = document.querySelectorAll(selector);
-
-                            for (var i = 0; i < Math.min(nodes.length, 20); i++) {
-                                var n = nodes[i];
-
-                                var txt =
-                                    n.getAttribute("aria-label") ||
-                                    n.getAttribute("title") ||
-                                    n.getAttribute("data-count") ||
-                                    n.innerText ||
-                                    n.textContent ||
-                                    "";
-
-                                txt = safeText(txt);
-
-                                if (!txt) continue;
-
-                                var lower = txt.toLowerCase();
-
-                                if (
-                                    /\b\d+\b/.test(lower) ||
-                                    lower.indexOf("unread") >= 0 ||
-                                    lower.indexOf("notification") >= 0 ||
-                                    lower.indexOf("message") >= 0 ||
-                                    lower.indexOf("new") >= 0 ||
-                                    lower.indexOf("értesítés") >= 0 ||
-                                    lower.indexOf("üzenet") >= 0 ||
-                                    lower.indexOf("új") >= 0
-                                ) {
-                                    foundTexts.push(txt);
-                                }
-                            }
-                        });
-
-                        if (foundTexts.length > 0) {
-                            sendSignal(
-                                "Web activity detected",
-                 
+        targetWebView.evaluateJavascript(
+            UniversalNotificationScript.create(),
+            null
+        )
+    }
+}
