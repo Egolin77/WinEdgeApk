@@ -27,8 +27,6 @@ import androidx.core.app.NotificationManagerCompat
 
 class MainActivity : AppCompatActivity() {
 
-    // Ha az asztali Excelnél továbbra is elcsúsznának a betűk, ezt a Windows-os User Agentet
-    // átírhatod az asztali Mac/Chrome verzióra is, amit korábban küldtem.
     private val windowsEdgeUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
@@ -49,6 +47,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             null
         }
+
         fileUploadCallback?.onReceiveValue(uris)
         fileUploadCallback = null
     }
@@ -57,11 +56,13 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
         val request = pendingPermissionRequest ?: return@registerForActivityResult
+
         if (grants.values.all { it }) {
             request.grant(request.resources)
         } else {
             request.deny()
         }
+
         pendingPermissionRequest = null
     }
 
@@ -81,6 +82,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        NotificationHelper.createWebActivityNotificationChannel(this)
+
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -98,13 +101,18 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
+        webView.addJavascriptInterface(
+            UniversalWebNotificationBridge(this),
+            "WinEdgeNotifier"
+        )
+
         webView.webViewClient = createMainWebViewClient()
         webView.webChromeClient = createMainWebChromeClient()
 
-        // Figyelők beállítása a letöltésekhez
         setupDownloadListener(webView)
 
-        webView.loadUrl(startUrl)
+        val initialUrl = intent.getStringExtra("open_url") ?: startUrl
+        webView.loadUrl(initialUrl)
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -121,80 +129,126 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+
+        val openUrl = intent.getStringExtra("open_url")
+        if (!openUrl.isNullOrBlank() && ::webView.isInitialized) {
+            webView.loadUrl(openUrl)
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(targetWebView: WebView) {
-        // Hardveres gyorsítás kényszerítése a HTML5 Canvas (Excel grid) sima kirajzolásához
         targetWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
         targetWebView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-            
+
             loadWithOverviewMode = true
             useWideViewPort = true
-            
+
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
+
             allowFileAccess = true
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
-            
-            userAgentString = windowsEdgeUserAgent
 
-            // Fixen 100%-on tartja a szövegméretet, így nagy felbontású (asztali) módban sem csúsznak szét a cellák
-            textZoom = 100 
-            
-            // Biztonságos vegyes tartalom kezelés modern webes funkciókhoz
+            userAgentString = windowsEdgeUserAgent
+            textZoom = 100
+
             mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
     }
 
     private fun setupDownloadListener(targetWebView: WebView) {
-        // Regisztráljuk a háttérben futó JavaScript interfészt a blobok kezeléséhez
-        targetWebView.addJavascriptInterface(BlobDownloadInterface(this), "AndroidBlobDownloader")
+        targetWebView.addJavascriptInterface(
+            BlobDownloadInterface(this),
+            "AndroidBlobDownloader"
+        )
 
         targetWebView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
             if (url.startsWith("blob:")) {
-                // Dinamikus Blob URL esetén JavaScript injektálással Base64 formátumra alakítjuk a fájlt
+                val safeUrl = url.replace("'", "\\'")
+                val safeMimeType = mimetype.replace("'", "\\'")
+                val safeContentDisposition = contentDisposition.replace("'", "\\'")
+
                 val jsCode = """
                     (function() {
                         var xhr = new XMLHttpRequest();
-                        xhr.open('GET', '$url', true);
+                        xhr.open('GET', '$safeUrl', true);
                         xhr.responseType = 'blob';
-                        xhr.onload = function(e) {
+                        xhr.onload = function() {
                             if (this.status == 200) {
                                 var blob = this.response;
                                 var reader = new FileReader();
                                 reader.readAsDataURL(blob);
                                 reader.onloadend = function() {
                                     var base64data = reader.result;
-                                    AndroidBlobDownloader.processBlob(base64data, '$mimetype', '$contentDisposition');
-                                }
+                                    AndroidBlobDownloader.processBlob(
+                                        base64data,
+                                        '$safeMimeType',
+                                        '$safeContentDisposition'
+                                    );
+                                };
                             }
                         };
                         xhr.send();
                     })();
                 """.trimIndent()
-                
+
                 targetWebView.evaluateJavascript(jsCode, null)
-                Toast.makeText(this, "Dinamikus tartalom feldolgozása...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    "Dinamikus tartalom feldolgozása...",
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
-                // Normál HTTP/HTTPS letöltés a gyári DownloadManager segítségével
                 try {
                     val request = DownloadManager.Request(Uri.parse(url)).apply {
                         val cookies = CookieManager.getInstance().getCookie(url)
-                        addRequestHeader("cookie", cookies)
+
+                        if (!cookies.isNullOrBlank()) {
+                            addRequestHeader("cookie", cookies)
+                        }
+
                         addRequestHeader("User-Agent", userAgent)
-                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                        val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
-                        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                        setNotificationVisibility(
+                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                        )
+
+                        val fileName = URLUtil.guessFileName(
+                            url,
+                            contentDisposition,
+                            mimetype
+                        )
+
+                        setDestinationInExternalPublicDir(
+                            Environment.DIRECTORY_DOWNLOADS,
+                            fileName
+                        )
                     }
-                    val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+                    val downloadManager =
+                        getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
                     downloadManager.enqueue(request)
-                    Toast.makeText(this, "Letöltés elindult...", Toast.LENGTH_SHORT).show()
+
+                    Toast.makeText(
+                        this,
+                        "Letöltés elindult...",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } catch (e: Exception) {
-                    Toast.makeText(this, "Hiba a letöltés során: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this,
+                        "Hiba a letöltés során: ${e.localizedMessage}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -202,6 +256,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun createMainWebViewClient(): WebViewClient {
         return object : WebViewClient() {
+
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
@@ -209,15 +264,21 @@ class MainActivity : AppCompatActivity() {
                 val uri = request.url
                 return handleUrl(uri)
             }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                injectUniversalNotificationWatcher(view)
+            }
         }
     }
 
     private fun createMainWebChromeClient(): WebChromeClient {
         return object : WebChromeClient() {
+
             override fun onShowFileChooser(
                 webView: WebView,
                 callback: ValueCallback<Array<Uri>>,
-                fileChooserParams: FileChooserParams
+                fileChooserParams: WebChromeClient.FileChooserParams
             ): Boolean {
                 fileUploadCallback?.onReceiveValue(null)
                 fileUploadCallback = callback
@@ -227,22 +288,27 @@ class MainActivity : AppCompatActivity() {
                     type = "*/*"
                     putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 }
+
                 fileChooserLauncher.launch(intent)
                 return true
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
                 val androidPermissions = mutableListOf<String>()
+
                 if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
                     androidPermissions.add(android.Manifest.permission.CAMERA)
                 }
+
                 if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
                     androidPermissions.add(android.Manifest.permission.RECORD_AUDIO)
                 }
+
                 if (androidPermissions.isEmpty()) {
                     request.deny()
                     return
                 }
+
                 pendingPermissionRequest = request
                 cameraAudioPermissionLauncher.launch(androidPermissions.toTypedArray())
             }
@@ -254,33 +320,47 @@ class MainActivity : AppCompatActivity() {
                 resultMsg: Message
             ): Boolean {
                 val popupWebView = WebView(this@MainActivity)
+
                 configureWebView(popupWebView)
-                
+
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(popupWebView, true)
-                
-                // Letöltések kezelése a felugró ablakokban is
+
+                popupWebView.addJavascriptInterface(
+                    UniversalWebNotificationBridge(this@MainActivity),
+                    "WinEdgeNotifier"
+                )
+
                 setupDownloadListener(popupWebView)
 
                 popupWebView.webViewClient = object : WebViewClient() {
+
                     override fun shouldOverrideUrlLoading(
                         view: WebView,
                         request: WebResourceRequest
                     ): Boolean {
                         val uri = request.url
+
                         if (handleUrl(uri)) {
                             popupWebView.destroy()
                             return true
                         }
+
                         webView.loadUrl(uri.toString())
                         popupWebView.destroy()
                         return true
+                    }
+
+                    override fun onPageFinished(view: WebView, url: String) {
+                        super.onPageFinished(view, url)
+                        injectUniversalNotificationWatcher(view)
                     }
                 }
 
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = popupWebView
                 resultMsg.sendToTarget()
+
                 return true
             }
         }
@@ -310,36 +390,152 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Belső osztály a JavaScript-ből érkező Base64 kódolású Blob adatok elmentésére (Android 10+ támogatással)
-    inner class BlobDownloadInterface(private val context: Context) {
-        @android.webkit.JavascriptInterface
-        fun processBlob(base64Data: String, mimeType: String, contentDisposition: String) {
-            try {
-                val pureBase64 = if (base64Data.contains(",")) base64Data.split(",")[1] else base64Data
-                val fileBytes = android.util.Base64.decode(pureBase64, android.util.Base64.DEFAULT)
-                val fileName = URLUtil.guessFileName("", contentDisposition, mimeType)
-                
-                val resolver = context.contentResolver
-                val contentValues = android.content.ContentValues().apply {
-                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+    private fun injectUniversalNotificationWatcher(targetWebView: WebView) {
+        val js = """
+            (function() {
+                if (window.__WinEdgeUniversalWatcherInstalled) {
+                    return;
                 }
-                
-                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { outputStream ->
-                        outputStream.write(fileBytes)
-                    }
-                    runOnUiThread {
-                        Toast.makeText(context, "Sikeresen mentve a Letöltésekbe: $fileName", Toast.LENGTH_LONG).show()
-                    }
+
+                window.__WinEdgeUniversalWatcherInstalled = true;
+
+                var lastSignal = "";
+                var lastSignalAt = 0;
+
+                function now() {
+                    return Date.now();
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(context, "Blob letöltési hiba: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+
+                function safeText(value) {
+                    if (!value) return "";
+                    return String(value)
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .substring(0, 240);
                 }
-            }
-        }
-    }
-}
+
+                function sendSignal(title, message) {
+                    try {
+                        var currentUrl = location.href || "";
+                        var cleanTitle = safeText(title || document.title || "Web activity detected");
+                        var cleanMessage = safeText(message || "Possible new activity on this page");
+
+                        var signal = cleanTitle + "|" + cleanMessage + "|" + currentUrl;
+                        var t = now();
+
+                        if (signal === lastSignal && (t - lastSignalAt) < 60000) return;
+                        if ((t - lastSignalAt) < 8000) return;
+
+                        lastSignal = signal;
+                        lastSignalAt = t;
+
+                        if (window.WinEdgeNotifier && window.WinEdgeNotifier.notifyFromWeb) {
+                            window.WinEdgeNotifier.notifyFromWeb(
+                                cleanTitle,
+                                cleanMessage,
+                                currentUrl
+                            );
+                        }
+                    } catch (e) {}
+                }
+
+                function titleLooksLikeNotification(title) {
+                    if (!title) return false;
+
+                    var t = title.toLowerCase();
+
+                    if (/^$$\d+$$/.test(t)) return true;
+                    if (/\b\d+\s+(new|unread|notification|message|messages)\b/.test(t)) return true;
+                    if (t.indexOf("new message") >= 0) return true;
+                    if (t.indexOf("unread") >= 0) return true;
+                    if (t.indexOf("notification") >= 0) return true;
+                    if (t.indexOf("értesítés") >= 0) return true;
+                    if (t.indexOf("üzenet") >= 0) return true;
+                    if (t.indexOf("új üzenet") >= 0) return true;
+
+                    return false;
+                }
+
+                var lastTitle = document.title || "";
+
+                setInterval(function() {
+                    try {
+                        var currentTitle = document.title || "";
+
+                        if (currentTitle !== lastTitle) {
+                            lastTitle = currentTitle;
+
+                            if (titleLooksLikeNotification(currentTitle)) {
+                                sendSignal("Web notification", currentTitle);
+                            }
+                        }
+                    } catch (e) {}
+                }, 3000);
+
+                function detectBadges() {
+                    try {
+                        var selectors = [
+                            "[aria-label*='unread' i]",
+                            "[aria-label*='notification' i]",
+                            "[aria-label*='message' i]",
+                            "[aria-label*='new' i]",
+                            "[aria-label*='értesítés' i]",
+                            "[aria-label*='üzenet' i]",
+                            "[aria-label*='új' i]",
+                            "[title*='unread' i]",
+                            "[title*='notification' i]",
+                            "[title*='message' i]",
+                            "[title*='new' i]",
+                            "[title*='értesítés' i]",
+                            "[title*='üzenet' i]",
+                            "[data-testid*='badge' i]",
+                            "[data-testid*='notification' i]",
+                            "[data-testid*='unread' i]",
+                            "[class*='badge' i]",
+                            "[class*='unread' i]",
+                            "[class*='notification' i]",
+                            "[class*='counter' i]",
+                            "[class*='count' i]"
+                        ];
+
+                        var foundTexts = [];
+
+                        selectors.forEach(function(selector) {
+                            var nodes = document.querySelectorAll(selector);
+
+                            for (var i = 0; i < Math.min(nodes.length, 20); i++) {
+                                var n = nodes[i];
+
+                                var txt =
+                                    n.getAttribute("aria-label") ||
+                                    n.getAttribute("title") ||
+                                    n.getAttribute("data-count") ||
+                                    n.innerText ||
+                                    n.textContent ||
+                                    "";
+
+                                txt = safeText(txt);
+
+                                if (!txt) continue;
+
+                                var lower = txt.toLowerCase();
+
+                                if (
+                                    /\b\d+\b/.test(lower) ||
+                                    lower.indexOf("unread") >= 0 ||
+                                    lower.indexOf("notification") >= 0 ||
+                                    lower.indexOf("message") >= 0 ||
+                                    lower.indexOf("new") >= 0 ||
+                                    lower.indexOf("értesítés") >= 0 ||
+                                    lower.indexOf("üzenet") >= 0 ||
+                                    lower.indexOf("új") >= 0
+                                ) {
+                                    foundTexts.push(txt);
+                                }
+                            }
+                        });
+
+                        if (foundTexts.length > 0) {
+                            sendSignal(
+                                "Web activity detected",
+                 
