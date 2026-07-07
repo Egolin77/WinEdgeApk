@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://cloud.mediusflow.com/nilfisk/#/Home"
+    private val startUrl = "https://nilfisk.sharepoint.com/sites/T-GIT-InfrastructureOperations/_layouts/15/Doc.aspx?sourcedoc={b818d694-87ae-4b30-86ad-87eb4fe96712}&action=edit&wd=target%28SAM.one%7C3b057cec-76c7-47d4-b6d1-2701718d19fa%2FM365%20licenses%7Cf89da3bb-3d4f-5c46-b732-f501ee8ccb1e%2F%29&wdorigin=NavigationUrl"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
