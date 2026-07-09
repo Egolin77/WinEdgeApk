@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         // JAVÍTVA: Az applicationId-t hozzáigazítottam a namespace-hez és a kódhoz
-        applicationId "com.example.winedge2342"
+        applicationId "com.example.winedge2345"
         minSdk 24
         targetSdk 34
         versionCode 1
