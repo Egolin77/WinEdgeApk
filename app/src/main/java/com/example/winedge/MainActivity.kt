@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    private val startUrl = "https://www.facebook.com"
+    private val startUrl = "https://web.teamviewer.com/management-portal/organization/overview"
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
