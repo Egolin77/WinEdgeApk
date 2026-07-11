@@ -28,9 +28,9 @@ import androidx.core.app.NotificationManagerCompat
 
 class MainActivity : AppCompatActivity() {
 
-    private val windowsEdgeUserAgent =
+    private val windowsDesktopChromeUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0"
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
@@ -151,6 +151,10 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
 
+            setSupportZoom(true)
+            builtInZoomControls = false
+            displayZoomControls = false
+
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
 
@@ -158,16 +162,18 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
 
-            userAgentString = windowsEdgeUserAgent
+            userAgentString = windowsDesktopChromeUserAgent
             textZoom = 100
 
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
+            @Suppress("DEPRECATION")
+            pluginState = WebSettings.PluginState.ON
         }
     }
 
     private fun createMainWebViewClient(): WebViewClient {
         return object : WebViewClient() {
-
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest
@@ -177,6 +183,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+
+                injectDesktopMode(view)
                 injectUniversalNotificationWatcher(view)
             }
         }
@@ -184,7 +192,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun createMainWebChromeClient(): WebChromeClient {
         return object : WebChromeClient() {
-
             override fun onShowFileChooser(
                 webView: WebView,
                 callback: ValueCallback<Array<Uri>>,
@@ -244,7 +251,6 @@ class MainActivity : AppCompatActivity() {
                 setupDownloadListener(popupWebView)
 
                 popupWebView.webViewClient = object : WebViewClient() {
-
                     override fun shouldOverrideUrlLoading(
                         view: WebView,
                         request: WebResourceRequest
@@ -263,6 +269,8 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onPageFinished(view: WebView, url: String) {
                         super.onPageFinished(view, url)
+
+                        injectDesktopMode(view)
                         injectUniversalNotificationWatcher(view)
                     }
                 }
@@ -349,12 +357,12 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val request = DownloadManager.Request(Uri.parse(url)).apply {
                         val cookies = CookieManager.getInstance().getCookie(url)
-
                         if (!cookies.isNullOrBlank()) {
                             addRequestHeader("cookie", cookies)
                         }
 
                         addRequestHeader("User-Agent", userAgent)
+
                         setNotificationVisibility(
                             DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
                         )
@@ -373,7 +381,6 @@ class MainActivity : AppCompatActivity() {
 
                     val downloadManager =
                         getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-
                     downloadManager.enqueue(request)
 
                     Toast.makeText(
@@ -390,6 +397,97 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun injectDesktopMode(targetWebView: WebView) {
+        val js = """
+            (function() {
+                try {
+                    Object.defineProperty(navigator, 'platform', {
+                        get: function() { return 'Win32'; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'vendor', {
+                        get: function() { return 'Google Inc.'; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'maxTouchPoints', {
+                        get: function() { return 0; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'hardwareConcurrency', {
+                        get: function() { return 8; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'deviceMemory', {
+                        get: function() { return 8; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: function() { return false; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'userAgent', {
+                        get: function() { return '$windowsDesktopChromeUserAgent'; },
+                        configurable: true
+                    });
+
+                    Object.defineProperty(navigator, 'appVersion', {
+                        get: function() { return '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'; },
+                        configurable: true
+                    });
+
+                    if (navigator.userAgentData) {
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: function() {
+                                return {
+                                    brands: [
+                                        { brand: 'Google Chrome', version: '124' },
+                                        { brand: 'Chromium', version: '124' },
+                                        { brand: 'Not-A.Brand', version: '99' }
+                                    ],
+                                    mobile: false,
+                                    platform: 'Windows',
+                                    getHighEntropyValues: function(hints) {
+                                        return Promise.resolve({
+                                            architecture: 'x86',
+                                            bitness: '64',
+                                            brands: [
+                                                { brand: 'Google Chrome', version: '124' },
+                                                { brand: 'Chromium', version: '124' },
+                                                { brand: 'Not-A.Brand', version: '99' }
+                                            ],
+                                            fullVersionList: [
+                                                { brand: 'Google Chrome', version: '124.0.0.0' },
+                                                { brand: 'Chromium', version: '124.0.0.0' },
+                                                { brand: 'Not-A.Brand', version: '99.0.0.0' }
+                                            ],
+                                            mobile: false,
+                                            model: '',
+                                            platform: 'Windows',
+                                            platformVersion: '10.0.0'
+                                        });
+                                    }
+                                };
+                            },
+                            configurable: true
+                        });
+                    }
+
+                    document.documentElement.style.touchAction = 'auto';
+                } catch (e) {
+                    console.log('Desktop mode injection failed', e);
+                }
+            })();
+        """.trimIndent()
+
+        targetWebView.evaluateJavascript(js, null)
     }
 
     private fun injectUniversalNotificationWatcher(targetWebView: WebView) {
