@@ -188,14 +188,38 @@ class MainActivity : AppCompatActivity() {
     val js = """
         (function() {
             try {
+
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => false,
                     configurable: true
                 });
+
+                Object.defineProperty(window, 'chrome', {
+                    get: () => ({
+                        runtime: {}
+                    }),
+                    configurable: true
+                });
+
+                if (navigator.userAgentData) {
+                    Object.defineProperty(navigator, 'userAgentData', {
+                        get: () => ({
+                            brands: [
+                                {brand: "Google Chrome", version: "138"},
+                                {brand: "Chromium", version: "138"}
+                            ],
+                            mobile: false,
+                            platform: "Windows"
+                        }),
+                        configurable: true
+                    });
+                }
+
             } catch(e) {}
         })();
     """.trimIndent()
 
     target.evaluateJavascript(js, null)
 }
+
 }
