@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://google.com"
+    private val startUrl = "https://nilfisk.sharepoint.com/:f:/s/T-GIT-InfrastructureOperations/IgCAZQ-aFozUQJgC7hx1o2sRASy9yYcuHK-5hw3oNUjGEtg?e=IJdQb9"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
