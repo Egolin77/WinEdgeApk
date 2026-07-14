@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
@@ -88,7 +87,10 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
-            setSupportMultipleWindows(true)
+            
+            // Kikapcsolva, hogy a bejelentkezési popupok ugyanabban az ablakban nyíljanak meg
+            setSupportMultipleWindows(false)
+            
             allowFileAccess = true
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
@@ -111,9 +113,18 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return handleUrl(request.url)
             }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                // Azonnali süti szinkronizáció az átirányítások előtt
+                CookieManager.getInstance().flush()
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 injectDesktopMode(view)
+                // Azonnali süti szinkronizáció az oldal betöltése után
+                CookieManager.getInstance().flush()
             }
         }
     }
@@ -143,33 +154,9 @@ class MainActivity : AppCompatActivity() {
                 pendingPermissionRequest = request
                 permissionLauncher.launch(permissions.toTypedArray())
             }
-
-            override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                val popup = WebView(this@MainActivity)
-                configureWebView(popup)
-                configureCookies(popup)
-                popup.webChromeClient = this
-                popup.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                        val uri = request.url
-                        if (handleUrl(uri)) {
-                            popup.destroy()
-                            return true
-                        }
-                        webView.loadUrl(uri.toString())
-                        popup.destroy()
-                        return true
-                    }
-                    override fun onPageFinished(view: WebView, url: String) {
-                        super.onPageFinished(view, url)
-                        injectDesktopMode(view)
-                    }
-                }
-                val transport = resultMsg.obj as WebView.WebViewTransport
-                transport.webView = popup
-                resultMsg.sendToTarget()
-                return true
-            }
+            
+            // Az onCreateWindow-ra már nincs szükség, mert a setSupportMultipleWindows(false) miatt 
+            // a rendszer automatikusan a meglévő ablakban kezeli az összes átirányítást.
         }
     }
 
