@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
@@ -17,6 +18,9 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.app.DownloadManager
+import android.os.Environment
+import android.webkit.URLUtil
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -24,7 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://github.com"
+    private val startUrl = "https://script.google.com/macros/s/AKfycbwoytNsui-y7jXl8xDGAe000MSRriz9vhaVqnPFibY/dev"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
@@ -55,6 +59,50 @@ class MainActivity : AppCompatActivity() {
         configureCookies(webView)
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+
+    try {
+        val request = DownloadManager.Request(Uri.parse(url))
+
+        val fileName = URLUtil.guessFileName(
+            url,
+            contentDisposition,
+            mimeType
+        )
+
+        request.setTitle(fileName)
+        request.setDescription("Downloading file...")
+        request.setMimeType(mimeType)
+
+        CookieManager.getInstance()
+            .getCookie(url)
+            ?.let { request.addRequestHeader("Cookie", it) }
+
+        request.addRequestHeader(
+            "User-Agent",
+            userAgent ?: desktopChromeUserAgent
+        )
+
+        webView.url?.let {
+            request.addRequestHeader("Referer", it)
+        }
+
+        request.setNotificationVisibility(
+            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+        )
+
+        request.setDestinationInExternalPublicDir(
+            Environment.DIRECTORY_DOWNLOADS,
+            fileName
+        )
+
+        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        dm.enqueue(request)
+
+    } catch (_: Exception) {
+    }
+        }
+        
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -87,10 +135,7 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
-            
-            // Kikapcsolva, hogy a bejelentkezési popupok ugyanabban az ablakban nyíljanak meg
-            setSupportMultipleWindows(false)
-            
+            setSupportMultipleWindows(true)
             allowFileAccess = true
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
@@ -113,18 +158,9 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return handleUrl(request.url)
             }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                // Azonnali süti szinkronizáció az átirányítások előtt
-                CookieManager.getInstance().flush()
-            }
-
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 injectDesktopMode(view)
-                // Azonnali süti szinkronizáció az oldal betöltése után
-                CookieManager.getInstance().flush()
             }
         }
     }
@@ -154,9 +190,33 @@ class MainActivity : AppCompatActivity() {
                 pendingPermissionRequest = request
                 permissionLauncher.launch(permissions.toTypedArray())
             }
-            
-            // Az onCreateWindow-ra már nincs szükség, mert a setSupportMultipleWindows(false) miatt 
-            // a rendszer automatikusan a meglévő ablakban kezeli az összes átirányítást.
+
+            override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+                val popup = WebView(this@MainActivity)
+                configureWebView(popup)
+                configureCookies(popup)
+                popup.webChromeClient = this
+                popup.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val uri = request.url
+                        if (handleUrl(uri)) {
+                            popup.destroy()
+                            return true
+                        }
+                        webView.loadUrl(uri.toString())
+                        popup.destroy()
+                        return true
+                    }
+                    override fun onPageFinished(view: WebView, url: String) {
+                        super.onPageFinished(view, url)
+                        injectDesktopMode(view)
+                    }
+                }
+                val transport = resultMsg.obj as WebView.WebViewTransport
+                transport.webView = popup
+                resultMsg.sendToTarget()
+                return true
+            }
         }
     }
 
