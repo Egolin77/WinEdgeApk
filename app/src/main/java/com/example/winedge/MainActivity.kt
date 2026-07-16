@@ -18,6 +18,9 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.app.DownloadManager
+import android.os.Environment
+import android.webkit.URLUtil
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -56,6 +59,50 @@ class MainActivity : AppCompatActivity() {
         configureCookies(webView)
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+
+    try {
+        val request = DownloadManager.Request(Uri.parse(url))
+
+        val fileName = URLUtil.guessFileName(
+            url,
+            contentDisposition,
+            mimeType
+        )
+
+        request.setTitle(fileName)
+        request.setDescription("Downloading file...")
+        request.setMimeType(mimeType)
+
+        CookieManager.getInstance()
+            .getCookie(url)
+            ?.let { request.addRequestHeader("Cookie", it) }
+
+        request.addRequestHeader(
+            "User-Agent",
+            userAgent ?: desktopChromeUserAgent
+        )
+
+        webView.url?.let {
+            request.addRequestHeader("Referer", it)
+        }
+
+        request.setNotificationVisibility(
+            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+        )
+
+        request.setDestinationInExternalPublicDir(
+            Environment.DIRECTORY_DOWNLOADS,
+            fileName
+        )
+
+        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        dm.enqueue(request)
+
+    } catch (_: Exception) {
+    }
+        }
+        
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
