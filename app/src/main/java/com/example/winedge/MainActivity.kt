@@ -28,7 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://script.google.com/macros/s/AKfycbwoytNsui-y7jXl8xDGAe000MSRriz9vhaVqnPFibY/dev"
+    private val startUrl = "https://github.com"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
