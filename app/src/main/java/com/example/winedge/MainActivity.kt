@@ -19,6 +19,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
+    // Safari / Mac OS User-Agent: Asztali nézetet ad, de NEM küld Chrome-specifikus Client Hint-eket,
+    // így a TikTok védelme nem észleli a Windows/Android ellentmondást.
+    private val macOsSafariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
+
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
@@ -91,8 +96,6 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
-            
-            // Kikapcsolva, hogy a bejelentkezési ablakok ne nyissanak új WebView-t
             setSupportMultipleWindows(false)
             
             allowFileAccess = true
@@ -101,10 +104,8 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
-            // A mesterséges Desktop UA helyett a gyári mobil User-Agent-ből csak a WebView azonosítókat vágjuk ki,
-            // így a böngésző fingerprintje (hangrendszer, GPU, platform) összhangban marad a fejléc adatokkal.
-            val defaultUa = WebSettings.getDefaultUserAgent(target.context)
-            userAgentString = defaultUa.replace("; wv", "").replace("Version/4.0 ", "")
+            // Asztali Safari azonosító beállítása
+            userAgentString = macOsSafariUserAgent
         }
     }
 
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 CookieManager.getInstance().flush()
+                hideAppDownloadElements(view)
             }
         }
     }
@@ -164,12 +166,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
-        if (scheme == "http" || scheme == "https") return false
+        val host = uri.host ?: ""
+
+        // Blokkoljuk az alkalmazás letöltésére kényszerítő mélylinkeket és áruházi hivatkozásokat
+        if (scheme == "market" || scheme == "intent" || scheme == "tiktok" || scheme == "snssdk1180") {
+            return true // Igaz = a WebView elnyeli a kérést, nem nyit meg külső appot
+        }
+
+        if (scheme == "http" || scheme == "https") {
+            if (host.contains("play.google.com") || host.contains("apps.apple.com")) {
+                return true // Play Áruház és App Store linkek blokkolása
+            }
+            return false // Normál böngészés engedélyezése a WebView-ban
+        }
+
         return try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
             true
         } catch (_: Exception) {
             true
         }
+    }
+
+    // Injektált CSS, ami elrejti az esetlegesen megmaradó "Töltsd le az appot" felugró ablakokat
+    private fun hideAppDownloadElements(view: WebView) {
+        val js = """
+            (function() {
+                var style = document.createElement('style');
+                style.type = 'text/css';
+                style.innerHTML = 'div[class*="DivAppDownload"], div[class*="ButtonDownloadApp"], div[class*="DivBannerContainer"], a[href*="play.google.com"] { display: none !important; }';
+                document.head.appendChild(style);
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(js, null)
     }
 }
