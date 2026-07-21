@@ -24,7 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://google.com"
+    private val startUrl = "https://cloud.mediusflow.com/nilfisk/#/Home"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
