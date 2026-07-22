@@ -92,7 +92,6 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             
-            // Microsoft OAuth popupok és iframe-ek támogatása
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
             
@@ -101,7 +100,6 @@ class MainActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             cacheMode = WebSettings.LOAD_DEFAULT
             
-            // Kevert tartalom biztonságos kezelése
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             userAgentString = desktopChromeUserAgent
         }
@@ -157,24 +155,37 @@ class MainActivity : AppCompatActivity() {
                 val popup = WebView(this@MainActivity)
                 configureWebView(popup)
                 configureCookies(popup)
-                
+
                 popup.webChromeClient = this
                 popup.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                        val uri = request.url
-                        if (handleUrl(uri)) {
+                    override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
+                        val url = request.url.toString()
+                        
+                        if (handleUrl(request.url)) {
                             popup.destroy()
                             return true
                         }
-                        // Engedjük, hogy a popup kezeli a saját autentikációs átirányításait
-                        return false
+
+                        // Az autentikációs kéréseket lefutni hagyjuk a háttérben
+                        if (url.contains("login.microsoftonline.com") || 
+                            url.contains("login.live.com") || 
+                            url.contains("oauth") || 
+                            url.contains("msal")) {
+                            return false
+                        }
+
+                        // Az App Launcher és egyéb alkalmazás-kattintásokat áttöltjük a fő WebView-ba
+                        webView.loadUrl(url)
+                        popup.destroy()
+                        return true
                     }
-                    override fun onPageFinished(view: WebView, url: String) {
-                        super.onPageFinished(view, url)
-                        injectDesktopMode(view)
+
+                    override fun onPageFinished(v: WebView, url: String) {
+                        super.onPageFinished(v, url)
+                        injectDesktopMode(v)
                     }
                 }
-                
+
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = popup
                 resultMsg.sendToTarget()
@@ -195,7 +206,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectDesktopMode(target: WebView) {
-        // Letisztultabb JS injektálás, ami nem zavarja meg a Microsoft Anti-Bot / OAuth ellenőrzéseit
         val js = """
             (function(){
                 try {
