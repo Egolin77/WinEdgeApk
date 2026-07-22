@@ -50,13 +50,17 @@ class MainActivity : AppCompatActivity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+        
         webView = WebView(this)
         setContentView(webView)
+        
         configureWebView(webView)
         configureCookies(webView)
+        
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
+        
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (webView.canGoBack()) webView.goBack() else {
@@ -87,14 +91,19 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(true)
             builtInZoomControls = false
             displayZoomControls = false
+            
+            // Microsoft OAuth popupok és iframe-ek támogatása
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
+            
             allowFileAccess = true
             allowContentAccess = true
             mediaPlaybackRequiresUserGesture = false
             cacheMode = WebSettings.LOAD_DEFAULT
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
+            
+            // Kevert tartalom biztonságos kezelése
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            userAgentString = desktopChromeUserAgent
         }
     }
 
@@ -148,6 +157,7 @@ class MainActivity : AppCompatActivity() {
                 val popup = WebView(this@MainActivity)
                 configureWebView(popup)
                 configureCookies(popup)
+                
                 popup.webChromeClient = this
                 popup.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -156,15 +166,15 @@ class MainActivity : AppCompatActivity() {
                             popup.destroy()
                             return true
                         }
-                        webView.loadUrl(uri.toString())
-                        popup.destroy()
-                        return true
+                        // Engedjük, hogy a popup kezeli a saját autentikációs átirányításait
+                        return false
                     }
                     override fun onPageFinished(view: WebView, url: String) {
                         super.onPageFinished(view, url)
                         injectDesktopMode(view)
                     }
                 }
+                
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = popup
                 resultMsg.sendToTarget()
@@ -185,13 +195,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectDesktopMode(target: WebView) {
+        // Letisztultabb JS injektálás, ami nem zavarja meg a Microsoft Anti-Bot / OAuth ellenőrzéseit
         val js = """
-            (function(){try{const ua='$desktopChromeUserAgent';const def=(o,p,v)=>Object.defineProperty(o,p,{get:()=>v,configurable:true});
-            def(navigator,'platform','Win32');def(navigator,'vendor','Google Inc.');def(navigator,'maxTouchPoints',0);def(navigator,'hardwareConcurrency',8);def(navigator,'deviceMemory',8);
-            def(navigator,'webdriver',false);def(navigator,'language','en-US');def(navigator,'languages',['en-US','en']);def(navigator,'userAgent',ua);
-            def(navigator,'appVersion','5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');def(window,'chrome',{runtime:{},app:{},webstore:{}});
-            if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:()=>({brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],mobile:false,platform:'Windows',getHighEntropyValues:()=>Promise.resolve({architecture:'x86',bitness:'64',mobile:false,model:'',platform:'Windows',platformVersion:'10.0.0',fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}]})}),configurable:true});}
-            document.documentElement.style.touchAction='auto';}catch(e){}})();
+            (function(){
+                try {
+                    Object.defineProperty(navigator, 'platform', {get: () => 'Win32', configurable: true});
+                    Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.', configurable: true});
+                } catch(e) {}
+            })();
         """.trimIndent()
         target.evaluateJavascript(js, null)
     }
