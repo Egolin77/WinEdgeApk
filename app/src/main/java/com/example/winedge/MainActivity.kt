@@ -20,15 +20,15 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    // Modern Asztali Chrome User-Agent – A Teams ehhez igazodik a legjobban
-    private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    // Friss Windows 11 / Chrome User-Agent az asztali Teams felület kikényszerítéséhez
+    private val windows11ChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
 
-    // 1. Kezdő URL átállítása a Microsoft Teams-re
+    // Kezdő URL átállítva a Microsoft Teams-re
     private val startUrl = "https://teams.microsoft.com"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -40,7 +40,7 @@ class MainActivity : AppCompatActivity() {
         fileUploadCallback = null
     }
 
-    // Kamera és mikrofon engedélykérések kezelése Android oldalról
+    // Kamera és mikrofon engedélykérések dinamikus kezelése Android oldalról
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val request = pendingPermissionRequest ?: return@registerForActivityResult
         if (grants.values.all { it }) {
@@ -74,7 +74,9 @@ class MainActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) webView.goBack() else {
+                if (webView.canGoBack()) {
+                    webView.goBack()
+                } else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
@@ -86,7 +88,9 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val openUrl = intent.getStringExtra("open_url")
-        if (!openUrl.isNullOrBlank() && ::webView.isInitialized) webView.loadUrl(openUrl)
+        if (!openUrl.isNullOrBlank() && ::webView.isInitialized) {
+            webView.loadUrl(openUrl)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -100,7 +104,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             textZoom = 100
             setSupportZoom(true)
-            builtInZoomControls = false
+            builtInZoomControls = true
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(false)
@@ -108,14 +112,14 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
             allowContentAccess = true
             
-            // Auto-play engedélyezése hívások fogadásához/indításához
+            // Média automatikus lejátszása hívások indításához/fogadásához
             mediaPlaybackRequiresUserGesture = false
             
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             
-            // Asztali Chrome azonosító használata a Teams-hez
-            userAgentString = desktopChromeUserAgent
+            // Asztali Windows 11 Chrome azonosító beállítása
+            userAgentString = windows11ChromeUserAgent
         }
     }
 
@@ -159,7 +163,7 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
-            // A mikrofon és kamera webes engedélykéréseinek átirányítása az Android rendszerhez
+            // Kamera és mikrofon engedélyek bekérése az Android rendszertől
             override fun onPermissionRequest(request: PermissionRequest) {
                 val permissions = mutableListOf<String>()
                 
@@ -185,14 +189,17 @@ class MainActivity : AppCompatActivity() {
         val scheme = uri.scheme ?: return false
         val host = uri.host ?: ""
 
-        // MS Teams és Microsoft bejelentkezési tartományok megtartása a WebView-n belül
+        // Megtartjuk a WebView-n belül a Teams és az összes Microsoft bejelentkezési tartományt
         if (scheme == "http" || scheme == "https") {
-            if (host.contains("microsoft.com") || host.contains("live.com") || host.contains("office.com") || host.contains("microsoftonline.com")) {
+            if (host.contains("microsoft.com") || 
+                host.contains("live.com") || 
+                host.contains("office.com") || 
+                host.contains("microsoftonline.com")) {
                 return false // Belül nyílik meg
             }
         }
 
-        // Egyéb külső hivatkozások kezelése
+        // Egyéb külső linkek megnyitása a külső böngészőben
         return try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
             true
@@ -201,3 +208,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+
