@@ -19,12 +19,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
-    private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+
+    // Modern Asztali Chrome User-Agent – A Teams ehhez igazodik a legjobban
+    private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://google.com"
+
+    // 1. Kezdő URL átállítása a Microsoft Teams-re
+    private val startUrl = "https://teams.microsoft.com"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
@@ -35,9 +40,14 @@ class MainActivity : AppCompatActivity() {
         fileUploadCallback = null
     }
 
+    // Kamera és mikrofon engedélykérések kezelése Android oldalról
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val request = pendingPermissionRequest ?: return@registerForActivityResult
-        if (grants.values.all { it }) request.grant(request.resources) else request.deny()
+        if (grants.values.all { it }) {
+            request.grant(request.resources)
+        } else {
+            request.deny()
+        }
         pendingPermissionRequest = null
     }
 
@@ -45,17 +55,23 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WebView.setWebContentsDebuggingEnabled(false)
+
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+
         webView = WebView(this)
         setContentView(webView)
+
         configureWebView(webView)
         configureCookies(webView)
+
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
+
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (webView.canGoBack()) webView.goBack() else {
@@ -87,16 +103,19 @@ class MainActivity : AppCompatActivity() {
             builtInZoomControls = false
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
-            
-            // Kikapcsolva, hogy a bejelentkezési popupok ugyanabban az ablakban nyíljanak meg
             setSupportMultipleWindows(false)
             
             allowFileAccess = true
             allowContentAccess = true
+            
+            // Auto-play engedélyezése hívások fogadásához/indításához
             mediaPlaybackRequiresUserGesture = false
+            
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
+            
+            // Asztali Chrome azonosító használata a Teams-hez
+            userAgentString = desktopChromeUserAgent
         }
     }
 
@@ -116,14 +135,11 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                // Azonnali süti szinkronizáció az átirányítások előtt
                 CookieManager.getInstance().flush()
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-                injectDesktopMode(view)
-                // Azonnali süti szinkronizáció az oldal betöltése után
                 CookieManager.getInstance().flush()
             }
         }
@@ -143,43 +159,45 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
+            // A mikrofon és kamera webes engedélykéréseinek átirányítása az Android rendszerhez
             override fun onPermissionRequest(request: PermissionRequest) {
                 val permissions = mutableListOf<String>()
-                if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) permissions.add(android.Manifest.permission.CAMERA)
-                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) permissions.add(android.Manifest.permission.RECORD_AUDIO)
+                
+                if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
+                    permissions.add(android.Manifest.permission.CAMERA)
+                }
+                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                    permissions.add(android.Manifest.permission.RECORD_AUDIO)
+                }
+                
                 if (permissions.isEmpty()) {
                     request.grant(request.resources)
                     return
                 }
+                
                 pendingPermissionRequest = request
                 permissionLauncher.launch(permissions.toTypedArray())
             }
-            
-            // Az onCreateWindow-ra már nincs szükség, mert a setSupportMultipleWindows(false) miatt 
-            // a rendszer automatikusan a meglévő ablakban kezeli az összes átirányítást.
         }
     }
 
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
-        if (scheme == "http" || scheme == "https") return false
+        val host = uri.host ?: ""
+
+        // MS Teams és Microsoft bejelentkezési tartományok megtartása a WebView-n belül
+        if (scheme == "http" || scheme == "https") {
+            if (host.contains("microsoft.com") || host.contains("live.com") || host.contains("office.com") || host.contains("microsoftonline.com")) {
+                return false // Belül nyílik meg
+            }
+        }
+
+        // Egyéb külső hivatkozások kezelése
         return try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
             true
         } catch (_: Exception) {
             true
         }
-    }
-
-    private fun injectDesktopMode(target: WebView) {
-        val js = """
-            (function(){try{const ua='$desktopChromeUserAgent';const def=(o,p,v)=>Object.defineProperty(o,p,{get:()=>v,configurable:true});
-            def(navigator,'platform','Win32');def(navigator,'vendor','Google Inc.');def(navigator,'maxTouchPoints',0);def(navigator,'hardwareConcurrency',8);def(navigator,'deviceMemory',8);
-            def(navigator,'webdriver',false);def(navigator,'language','en-US');def(navigator,'languages',['en-US','en']);def(navigator,'userAgent',ua);
-            def(navigator,'appVersion','5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');def(window,'chrome',{runtime:{},app:{},webstore:{}});
-            if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:()=>({brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],mobile:false,platform:'Windows',getHighEntropyValues:()=>Promise.resolve({architecture:'x86',bitness:'64',mobile:false,model:'',platform:'Windows',platformVersion:'10.0.0',fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}]})}),configurable:true});}
-            document.documentElement.style.touchAction='auto';}catch(e){}})();
-        """.trimIndent()
-        target.evaluateJavascript(js, null)
     }
 }
