@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
@@ -17,19 +18,17 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import android.app.DownloadManager
+import android.os.Environment
+import android.webkit.URLUtil
 
 class MainActivity : AppCompatActivity() {
-
-    // Friss Windows 11 / Chrome User-Agent az asztali Teams felület kikényszerítéséhez
-    private val windows11ChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
+    private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-
-    // Kezdő URL átállítva a Microsoft Teams-re
-    private val startUrl = "https://teams.microsoft.com"
+    private val startUrl = "https://teams.cloud.microsoft"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
@@ -40,14 +39,9 @@ class MainActivity : AppCompatActivity() {
         fileUploadCallback = null
     }
 
-    // Kamera és mikrofon engedélykérések dinamikus kezelése Android oldalról
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val request = pendingPermissionRequest ?: return@registerForActivityResult
-        if (grants.values.all { it }) {
-            request.grant(request.resources)
-        } else {
-            request.deny()
-        }
+        if (grants.values.all { it }) request.grant(request.resources) else request.deny()
         pendingPermissionRequest = null
     }
 
@@ -55,28 +49,64 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WebView.setWebContentsDebuggingEnabled(false)
-
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
-
         webView = WebView(this)
         setContentView(webView)
-
         configureWebView(webView)
         configureCookies(webView)
-
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
 
+    try {
+        val request = DownloadManager.Request(Uri.parse(url))
+
+        val fileName = URLUtil.guessFileName(
+            url,
+            contentDisposition,
+            mimeType
+        )
+
+        request.setTitle(fileName)
+        request.setDescription("Downloading file...")
+        request.setMimeType(mimeType)
+
+        CookieManager.getInstance()
+            .getCookie(url)
+            ?.let { request.addRequestHeader("Cookie", it) }
+
+        request.addRequestHeader(
+            "User-Agent",
+            userAgent ?: desktopChromeUserAgent
+        )
+
+        webView.url?.let {
+            request.addRequestHeader("Referer", it)
+        }
+
+        request.setNotificationVisibility(
+            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+        )
+
+        request.setDestinationInExternalPublicDir(
+            Environment.DIRECTORY_DOWNLOADS,
+            fileName
+        )
+
+        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        dm.enqueue(request)
+
+    } catch (_: Exception) {
+    }
+        }
+        
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
-
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
+                if (webView.canGoBack()) webView.goBack() else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                 }
@@ -88,9 +118,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val openUrl = intent.getStringExtra("open_url")
-        if (!openUrl.isNullOrBlank() && ::webView.isInitialized) {
-            webView.loadUrl(openUrl)
-        }
+        if (!openUrl.isNullOrBlank() && ::webView.isInitialized) webView.loadUrl(openUrl)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -104,22 +132,16 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             textZoom = 100
             setSupportZoom(true)
-            builtInZoomControls = true
+            builtInZoomControls = false
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
-            setSupportMultipleWindows(false)
-            
+            setSupportMultipleWindows(true)
             allowFileAccess = true
             allowContentAccess = true
-            
-            // Média automatikus lejátszása hívások indításához/fogadásához
             mediaPlaybackRequiresUserGesture = false
-            
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            
-            // Asztali Windows 11 Chrome azonosító beállítása
-            userAgentString = windows11ChromeUserAgent
+            userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
         }
     }
 
@@ -136,15 +158,9 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return handleUrl(request.url)
             }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                CookieManager.getInstance().flush()
-            }
-
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-                CookieManager.getInstance().flush()
+                injectDesktopMode(view)
             }
         }
     }
@@ -163,43 +179,50 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
-            // Kamera és mikrofon engedélyek bekérése az Android rendszertől
             override fun onPermissionRequest(request: PermissionRequest) {
                 val permissions = mutableListOf<String>()
-                
-                if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
-                    permissions.add(android.Manifest.permission.CAMERA)
-                }
-                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
-                    permissions.add(android.Manifest.permission.RECORD_AUDIO)
-                }
-                
+                if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) permissions.add(android.Manifest.permission.CAMERA)
+                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) permissions.add(android.Manifest.permission.RECORD_AUDIO)
                 if (permissions.isEmpty()) {
                     request.grant(request.resources)
                     return
                 }
-                
                 pendingPermissionRequest = request
                 permissionLauncher.launch(permissions.toTypedArray())
+            }
+
+            override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+                val popup = WebView(this@MainActivity)
+                configureWebView(popup)
+                configureCookies(popup)
+                popup.webChromeClient = this
+                popup.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val uri = request.url
+                        if (handleUrl(uri)) {
+                            popup.destroy()
+                            return true
+                        }
+                        webView.loadUrl(uri.toString())
+                        popup.destroy()
+                        return true
+                    }
+                    override fun onPageFinished(view: WebView, url: String) {
+                        super.onPageFinished(view, url)
+                        injectDesktopMode(view)
+                    }
+                }
+                val transport = resultMsg.obj as WebView.WebViewTransport
+                transport.webView = popup
+                resultMsg.sendToTarget()
+                return true
             }
         }
     }
 
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
-        val host = uri.host ?: ""
-
-        // Megtartjuk a WebView-n belül a Teams és az összes Microsoft bejelentkezési tartományt
-        if (scheme == "http" || scheme == "https") {
-            if (host.contains("microsoft.com") || 
-                host.contains("live.com") || 
-                host.contains("office.com") || 
-                host.contains("microsoftonline.com")) {
-                return false // Belül nyílik meg
-            }
-        }
-
-        // Egyéb külső linkek megnyitása a külső böngészőben
+        if (scheme == "http" || scheme == "https") return false
         return try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
             true
@@ -207,5 +230,16 @@ class MainActivity : AppCompatActivity() {
             true
         }
     }
-}
 
+    private fun injectDesktopMode(target: WebView) {
+        val js = """
+            (function(){try{const ua='$desktopChromeUserAgent';const def=(o,p,v)=>Object.defineProperty(o,p,{get:()=>v,configurable:true});
+            def(navigator,'platform','Win32');def(navigator,'vendor','Google Inc.');def(navigator,'maxTouchPoints',0);def(navigator,'hardwareConcurrency',8);def(navigator,'deviceMemory',8);
+            def(navigator,'webdriver',false);def(navigator,'language','en-US');def(navigator,'languages',['en-US','en']);def(navigator,'userAgent',ua);
+            def(navigator,'appVersion','5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');def(window,'chrome',{runtime:{},app:{},webstore:{}});
+            if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:()=>({brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],mobile:false,platform:'Windows',getHighEntropyValues:()=>Promise.resolve({architecture:'x86',bitness:'64',mobile:false,model:'',platform:'Windows',platformVersion:'10.0.0',fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}]})}),configurable:true});}
+            document.documentElement.style.touchAction='auto';}catch(e){}})();
+        """.trimIndent()
+        target.evaluateJavascript(js, null)
+    }
+}
