@@ -2,13 +2,16 @@ package com.example.winedge
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -18,17 +21,16 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import android.app.DownloadManager
-import android.os.Environment
-import android.webkit.URLUtil
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+            "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://teams.cloud.microsoft"
+
+    // Közvetlen Microsoft Teams kezdőoldal
+    private val startUrl = "https://teams.microsoft.com"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
@@ -51,59 +53,40 @@ class MainActivity : AppCompatActivity() {
         WebView.setWebContentsDebuggingEnabled(false)
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+        
         webView = WebView(this)
         setContentView(webView)
         configureWebView(webView)
         configureCookies(webView)
+        
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+        
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            try {
+                val request = DownloadManager.Request(Uri.parse(url))
+                val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
 
-    try {
-        val request = DownloadManager.Request(Uri.parse(url))
+                request.setTitle(fileName)
+                request.setDescription("Downloading file...")
+                request.setMimeType(mimeType)
 
-        val fileName = URLUtil.guessFileName(
-            url,
-            contentDisposition,
-            mimeType
-        )
+                CookieManager.getInstance().getCookie(url)?.let { request.addRequestHeader("Cookie", it) }
+                request.addRequestHeader("User-Agent", userAgent ?: desktopChromeUserAgent)
+                webView.url?.let { request.addRequestHeader("Referer", it) }
 
-        request.setTitle(fileName)
-        request.setDescription("Downloading file...")
-        request.setMimeType(mimeType)
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
 
-        CookieManager.getInstance()
-            .getCookie(url)
-            ?.let { request.addRequestHeader("Cookie", it) }
-
-        request.addRequestHeader(
-            "User-Agent",
-            userAgent ?: desktopChromeUserAgent
-        )
-
-        webView.url?.let {
-            request.addRequestHeader("Referer", it)
-        }
-
-        request.setNotificationVisibility(
-            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-        )
-
-        request.setDestinationInExternalPublicDir(
-            Environment.DIRECTORY_DOWNLOADS,
-            fileName
-        )
-
-        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        dm.enqueue(request)
-
-    } catch (_: Exception) {
-    }
+                val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(request)
+            } catch (_: Exception) {}
         }
         
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
+        
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (webView.canGoBack()) webView.goBack() else {
@@ -138,7 +121,10 @@ class MainActivity : AppCompatActivity() {
             setSupportMultipleWindows(true)
             allowFileAccess = true
             allowContentAccess = true
+            
+            // FONTOS: Média autolejátszás engedélyezése hívásokhoz
             mediaPlaybackRequiresUserGesture = false
+            
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
@@ -158,8 +144,15 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return handleUrl(request.url)
             }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                CookieManager.getInstance().flush()
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+                CookieManager.getInstance().flush()
                 injectDesktopMode(view)
             }
         }
@@ -179,10 +172,12 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
+            // FONTOS: Kamera és mikrofon engedélykérelmek átadása az Androidnak
             override fun onPermissionRequest(request: PermissionRequest) {
                 val permissions = mutableListOf<String>()
                 if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) permissions.add(android.Manifest.permission.CAMERA)
                 if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) permissions.add(android.Manifest.permission.RECORD_AUDIO)
+                
                 if (permissions.isEmpty()) {
                     request.grant(request.resources)
                     return
@@ -191,11 +186,12 @@ class MainActivity : AppCompatActivity() {
                 permissionLauncher.launch(permissions.toTypedArray())
             }
 
+            // OAuth login popup ablakok kezelése (Bejelentkezési hurkok és külső Chrome nyitás ellen)
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 val popup = WebView(this@MainActivity)
                 configureWebView(popup)
                 configureCookies(popup)
-                popup.webChromeClient = this
+                popup.webChromeClient = this // A popup is átörökli az onPermissionRequest-et!
                 popup.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val uri = request.url
@@ -209,6 +205,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     override fun onPageFinished(view: WebView, url: String) {
                         super.onPageFinished(view, url)
+                        CookieManager.getInstance().flush()
                         injectDesktopMode(view)
                     }
                 }
@@ -222,7 +219,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleUrl(uri: Uri): Boolean {
         val scheme = uri.scheme ?: return false
-        if (scheme == "http" || scheme == "https") return false
+        
+        // Csupán a biztonsági/nem webes sémákat engedjük ki külső alkalmazásra
+        if (scheme == "http" || scheme == "https") {
+            return false // A WebView kezeli le az összes MS login és Teams oldalt!
+        }
+        
         return try {
             startActivity(Intent(Intent.ACTION_VIEW, uri))
             true
