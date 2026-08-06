@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.DownloadManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
@@ -21,6 +22,10 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -44,6 +49,11 @@ class MainActivity : AppCompatActivity() {
         if (grants.values.all { it }) request.grant(request.resources) else request.deny()
         pendingPermissionRequest = null
     }
+
+    // Értesítési engedély kérése Android 13+ (API 33+) eszközökön
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +111,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+
+        // Háttérbeli levelellenőrző időzítő indítása és engedélyek bekérése
+        requestNotificationPermission()
+        scheduleMailCheck()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -153,7 +167,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 injectDesktopMode(view)
-                // Sütik szinkronizálása a lemezre minden betöltés után
+                // Sütik mentése a lemezre, hogy a MailCheckWorker is lássa őket
                 CookieManager.getInstance().flush()
             }
         }
@@ -186,7 +200,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                // Megakadályozzuk az ablak megsemmisítéséből fakadó munkamenet-szakadást (OAuth/Bejelentkezési kérések)
                 val hitResult = view.hitTestResult
                 val url = hitResult.extra
                 if (url != null) {
@@ -259,11 +272,29 @@ class MainActivity : AppCompatActivity() {
                         });
                     }
 
-                    // Megakadályozza, hogy a mobil touch eventek felborítsák a legördülő menüket és a fókuszt
                     document.documentElement.style.touchAction = 'manipulation';
                 } catch(e) {}
             })();
         """.trimIndent()
         target.evaluateJavascript(js, null)
+    }
+
+    // Értesítési engedély elkérése (Android 13 felett kötelező az értesítések megjelenítéséhez)
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // 20 perces háttérbeli levelellenőrzés ütemezése WorkManagerrel
+    private fun scheduleMailCheck() {
+        val mailCheckRequest = PeriodicWorkRequestBuilder<MailCheckWorker>(20, TimeUnit.MINUTES)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "OutlookMailCheck",
+            ExistingPeriodicWorkPolicy.KEEP,
+            mailCheckRequest
+        )
     }
 }
