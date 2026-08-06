@@ -26,21 +26,34 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
 
     private fun checkUnreadMail(): Boolean {
         return try {
-            val url = URL("https://outlook.cloud.microsoft/api/v2.0/me/messages?\$filter=IsRead eq false")
+            // Az Outlook Web App belső OWA végpontja
+            val url = URL("https://outlook.cloud.microsoft/owa/service.svc?action=GetUnreadCount")
             val connection = url.openConnection() as HttpURLConnection
             
             val cookies = CookieManager.getInstance().getCookie("https://outlook.cloud.microsoft")
-            if (cookies != null) {
-                connection.setRequestProperty("Cookie", cookies)
+            if (cookies.isNullOrEmpty()) {
+                return false // Ha nincs süti (még nincs bejelentkezve), nem tud ellenőrizni
             }
+
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Cookie", cookies)
             connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/138.0.0.0")
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.doOutput = true
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+
+            // Üres JSON body küldése az OWA kéréshez
+            val outputStream = connection.outputStream
+            outputStream.write("{}".toByteArray())
+            outputStream.flush()
+            outputStream.close()
 
             val responseCode = connection.responseCode
             if (responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
-                response.contains("\"value\":[") && !response.contains("\"value\":[]")
+                // Ha a válaszban a számláló nagyobb mint 0
+                response.contains("\"UnreadCount\":") && !response.contains("\"UnreadCount\":0")
             } else {
                 false
             }
@@ -51,10 +64,17 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
 
     private fun sendNotification() {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "mail_notifications"
+        val channelId = "outlook_mail_channel"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Új Levelek", NotificationManager.IMPORTANCE_DEFAULT)
+            val channel = NotificationChannel(
+                channelId, 
+                "Outlook Új Levelek", 
+                NotificationManager.IMPORTANCE_HIGH // HIGH kell, hogy feldobja a kijelzőre
+            ).apply {
+                description = "Értesítés új olvasatlan levelekről"
+                enableVibration(true)
+            }
             notificationManager.createNotificationChannel(channel)
         }
 
@@ -62,7 +82,8 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
             .setSmallIcon(android.R.drawable.ic_dialog_email)
             .setContentTitle("Outlook")
             .setContentText("Új olvasatlan leveled érkezett!")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .build()
 
