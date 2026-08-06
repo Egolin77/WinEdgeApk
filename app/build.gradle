@@ -39,4 +39,5 @@ dependencies {
     
     // Custom Tabs támogatás a Google bejelentkezéshez (picit frissítve a stabilitásért)
     implementation 'androidx.browser:browser:1.8.0' 
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }
