@@ -2,13 +2,16 @@ package com.example.winedge
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -18,13 +21,10 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import android.app.DownloadManager
-import android.os.Environment
-import android.webkit.URLUtil
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+            "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
@@ -51,59 +51,48 @@ class MainActivity : AppCompatActivity() {
         WebView.setWebContentsDebuggingEnabled(false)
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_FULLSCREEN
+        
         webView = WebView(this)
         setContentView(webView)
+        
         configureWebView(webView)
         configureCookies(webView)
+        
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
-        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-
-    try {
-        val request = DownloadManager.Request(Uri.parse(url))
-
-        val fileName = URLUtil.guessFileName(
-            url,
-            contentDisposition,
-            mimeType
-        )
-
-        request.setTitle(fileName)
-        request.setDescription("Downloading file...")
-        request.setMimeType(mimeType)
-
-        CookieManager.getInstance()
-            .getCookie(url)
-            ?.let { request.addRequestHeader("Cookie", it) }
-
-        request.addRequestHeader(
-            "User-Agent",
-            userAgent ?: desktopChromeUserAgent
-        )
-
-        webView.url?.let {
-            request.addRequestHeader("Referer", it)
-        }
-
-        request.setNotificationVisibility(
-            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-        )
-
-        request.setDestinationInExternalPublicDir(
-            Environment.DIRECTORY_DOWNLOADS,
-            fileName
-        )
-
-        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        dm.enqueue(request)
-
-    } catch (_: Exception) {
-    }
-        }
         
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            try {
+                val request = DownloadManager.Request(Uri.parse(url))
+                val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+
+                request.setTitle(fileName)
+                request.setDescription("Downloading file...")
+                request.setMimeType(mimeType)
+
+                CookieManager.getInstance().getCookie(url)?.let { 
+                    request.addRequestHeader("Cookie", it) 
+                }
+
+                request.addRequestHeader("User-Agent", userAgent ?: desktopChromeUserAgent)
+
+                webView.url?.let {
+                    request.addRequestHeader("Referer", it)
+                }
+
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+
+                val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(request)
+            } catch (_: Exception) {
+            }
+        }
+
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
+        
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (webView.canGoBack()) webView.goBack() else {
@@ -124,6 +113,9 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(target: WebView) {
         target.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        target.isFocusable = true
+        target.isFocusableInTouchMode = true
+        
         target.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -141,7 +133,7 @@ class MainActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
+            userAgentString = desktopChromeUserAgent
         }
     }
 
@@ -161,6 +153,8 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 injectDesktopMode(view)
+                // Sütik szinkronizálása a lemezre minden betöltés után
+                CookieManager.getInstance().flush()
             }
         }
     }
@@ -192,28 +186,15 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                val popup = WebView(this@MainActivity)
-                configureWebView(popup)
-                configureCookies(popup)
-                popup.webChromeClient = this
-                popup.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                        val uri = request.url
-                        if (handleUrl(uri)) {
-                            popup.destroy()
-                            return true
-                        }
-                        webView.loadUrl(uri.toString())
-                        popup.destroy()
-                        return true
-                    }
-                    override fun onPageFinished(view: WebView, url: String) {
-                        super.onPageFinished(view, url)
-                        injectDesktopMode(view)
-                    }
+                // Megakadályozzuk az ablak megsemmisítéséből fakadó munkamenet-szakadást (OAuth/Bejelentkezési kérések)
+                val hitResult = view.hitTestResult
+                val url = hitResult.extra
+                if (url != null) {
+                    view.loadUrl(url)
+                    return false
                 }
                 val transport = resultMsg.obj as WebView.WebViewTransport
-                transport.webView = popup
+                transport.webView = view
                 resultMsg.sendToTarget()
                 return true
             }
@@ -233,12 +214,55 @@ class MainActivity : AppCompatActivity() {
 
     private fun injectDesktopMode(target: WebView) {
         val js = """
-            (function(){try{const ua='$desktopChromeUserAgent';const def=(o,p,v)=>Object.defineProperty(o,p,{get:()=>v,configurable:true});
-            def(navigator,'platform','Win32');def(navigator,'vendor','Google Inc.');def(navigator,'maxTouchPoints',0);def(navigator,'hardwareConcurrency',8);def(navigator,'deviceMemory',8);
-            def(navigator,'webdriver',false);def(navigator,'language','en-US');def(navigator,'languages',['en-US','en']);def(navigator,'userAgent',ua);
-            def(navigator,'appVersion','5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');def(window,'chrome',{runtime:{},app:{},webstore:{}});
-            if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:()=>({brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],mobile:false,platform:'Windows',getHighEntropyValues:()=>Promise.resolve({architecture:'x86',bitness:'64',mobile:false,model:'',platform:'Windows',platformVersion:'10.0.0',fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}]})}),configurable:true});}
-            document.documentElement.style.touchAction='auto';}catch(e){}})();
+            (function(){
+                try {
+                    const ua = '$desktopChromeUserAgent';
+                    const def = (o, p, v) => Object.defineProperty(o, p, {get: () => v, configurable: true});
+                    
+                    def(navigator, 'platform', 'Win32');
+                    def(navigator, 'vendor', 'Google Inc.');
+                    def(navigator, 'maxTouchPoints', 0);
+                    def(navigator, 'hardwareConcurrency', 8);
+                    def(navigator, 'deviceMemory', 8);
+                    def(navigator, 'webdriver', false);
+                    def(navigator, 'language', 'en-US');
+                    def(navigator, 'languages', ['en-US', 'en']);
+                    def(navigator, 'userAgent', ua);
+                    def(navigator, 'appVersion', '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');
+                    def(window, 'chrome', {runtime: {}, app: {}, webstore: {}});
+
+                    if (navigator.userAgentData) {
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: () => ({
+                                brands: [
+                                    {brand: 'Google Chrome', version: '138'},
+                                    {brand: 'Chromium', version: '138'},
+                                    {brand: 'Not-A.Brand', version: '99'}
+                                ],
+                                mobile: false,
+                                platform: 'Windows',
+                                getHighEntropyValues: () => Promise.resolve({
+                                    architecture: 'x86',
+                                    bitness: '64',
+                                    mobile: false,
+                                    model: '',
+                                    platform: 'Windows',
+                                    platformVersion: '10.0.0',
+                                    fullVersionList: [
+                                        {brand: 'Google Chrome', version: '138.0.0.0'},
+                                        {brand: 'Chromium', version: '138.0.0.0'},
+                                        {brand: 'Not-A.Brand', version: '99.0.0.0'}
+                                    ]
+                                })
+                            }),
+                            configurable: true
+                        });
+                    }
+
+                    // Megakadályozza, hogy a mobil touch eventek felborítsák a legördülő menüket és a fókuszt
+                    document.documentElement.style.touchAction = 'manipulation';
+                } catch(e) {}
+            })();
         """.trimIndent()
         target.evaluateJavascript(js, null)
     }
