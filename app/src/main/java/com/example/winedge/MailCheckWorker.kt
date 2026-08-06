@@ -4,24 +4,24 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.webkit.CookieManager
 import androidx.core.app.NotificationCompat
+import androidx.work.ListenableWorker
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import android.webkit.CookieManager
 import java.net.HttpURLConnection
 import java.net.URL
 
 class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
-    override fun doWork(): Result {
-        // Ellenőrizzük az olvasatlan leveleket a Microsoft süti segítségével
+    override fun doWork(): ListenableWorker.Result {
         val hasUnread = checkUnreadMail()
 
         if (hasUnread) {
             sendNotification()
         }
 
-        return Result.success()
+        return ListenableWorker.Result.success()
     }
 
     private fun checkUnreadMail(): Boolean {
@@ -29,7 +29,6 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
             val url = URL("https://outlook.cloud.microsoft/api/v2.0/me/messages?\$filter=IsRead eq false")
             val connection = url.openConnection() as HttpURLConnection
             
-            // Átadjuk a WebView-ban eltárolt bejelentkezési sütiket
             val cookies = CookieManager.getInstance().getCookie("https://outlook.cloud.microsoft")
             if (cookies != null) {
                 connection.setRequestProperty("Cookie", cookies)
@@ -41,12 +40,11 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
             val responseCode = connection.responseCode
             if (responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
-                // Ha a válaszban van elem, akkor van olvasatlan levél
                 response.contains("\"value\":[") && !response.contains("\"value\":[]")
             } else {
                 false
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -55,7 +53,7 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "mail_notifications"
 
-        if (Build.VERSION.VERSION_CODES.O <= Build.VERSION.SDK_INT) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Új Levelek", NotificationManager.IMPORTANCE_DEFAULT)
             notificationManager.createNotificationChannel(channel)
         }
@@ -71,4 +69,3 @@ class MailCheckWorker(context: Context, params: WorkerParameters) : Worker(conte
         notificationManager.notify(1001, notification)
     }
 }
-
