@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.webkit.CookieManager
@@ -18,8 +19,6 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.webkit.WebSettingsCompat
-import androidx.webkit.WebViewFeature
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -46,7 +45,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
-        // MÓDOSÍTÁS: Mindig világos téma kényszerítése az alkalmazásra/activity-re
+        // Mindig világos téma kényszerítése az alkalmazásra/activity-re
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
 
         super.onCreate(savedInstanceState)
@@ -106,14 +105,14 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
-        }
 
-        // MÓDOSÍTÁS: WebView automatikus sötétítésének letiltása
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(target.settings, false)
-        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-            @Suppress("DEPRECATION")
-            WebSettingsCompat.setForceDark(target.settings, WebSettingsCompat.FORCE_DARK_OFF)
+            // Sötétítés letiltása beépített SDK API-kkal (külső lib nélkül)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                isAlgorithmicDarkeningAllowed = false
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                @Suppress("DEPRECATION")
+                forceDark = WebSettings.FORCE_DARK_OFF
+            }
         }
     }
 
