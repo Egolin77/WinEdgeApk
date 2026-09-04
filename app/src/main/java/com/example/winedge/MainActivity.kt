@@ -17,6 +17,9 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -43,6 +46,9 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        // MÓDOSÍTÁS: Mindig világos téma kényszerítése az alkalmazásra/activity-re
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+
         super.onCreate(savedInstanceState)
         WebView.setWebContentsDebuggingEnabled(false)
         @Suppress("DEPRECATION")
@@ -81,14 +87,14 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             databaseEnabled = true
             
-            // MÓDOSÍTÁS: Szélesség illesztése a képernyőhöz
+            // Szélesség illesztése a képernyőhöz
             useWideViewPort = true
-            loadWithOverviewMode = false // Kikapcsolva, hogy ne méretezze túl fekvő módban
-            layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING // Automatikus szöveg/tartalom illesztés
+            loadWithOverviewMode = false
+            layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             
             textZoom = 100
             setSupportZoom(true)
-            builtInZoomControls = true // Engedélyezzük a zoomot, ha mégis manuálisan igazítani kéne
+            builtInZoomControls = true
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
             
@@ -100,6 +106,14 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
+        }
+
+        // MÓDOSÍTÁS: WebView automatikus sötétítésének letiltása
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(target.settings, false)
+        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+            @Suppress("DEPRECATION")
+            WebSettingsCompat.setForceDark(target.settings, WebSettingsCompat.FORCE_DARK_OFF)
         }
     }
 
@@ -170,11 +184,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectDesktopMode(target: WebView) {
-        // MÓDOSÍTÁS: Dinamikus HTML viewport beszúrás, ami kényszeríti a 100%-os szélességillesztést
         val js = """
             (function(){
                 try {
-                    // Viewport beállítása a kijelző szélességére
                     let meta = document.querySelector('meta[name="viewport"]');
                     if (!meta) {
                         meta = document.createElement('meta');
@@ -183,12 +195,10 @@ class MainActivity : AppCompatActivity() {
                     }
                     meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
 
-                    // CSS szabályok az eltúlzott szélesség és kilógó elemek ellen
                     const style = document.createElement('style');
                     style.innerHTML = 'html, body { max-width: 100% !important; overflow-x: auto !important; }';
                     document.head.appendChild(style);
 
-                    // User Agent emuláció
                     const ua='$desktopChromeUserAgent';
                     const def=(o,p,v)=>Object.defineProperty(o,p,{get:()=>v,configurable:true});
                     def(navigator,'platform','Win32');
