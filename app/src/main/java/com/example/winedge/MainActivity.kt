@@ -90,7 +90,7 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView(target: WebView) {
         target.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-        // Rendszer szintű Force-Dark kikapcsolása a renderelési hibák és eltűnő szövegek ellen
+        // Rendszer szintű Force-Dark kikapcsolása a pislákoló/kisötétülő szövegek ellen
         if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
             WebSettingsCompat.setForceDark(target.settings, WebSettingsCompat.FORCE_DARK_OFF)
         }
@@ -235,7 +235,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 document.documentElement.style.touchAction='auto';
 
-                // Elforgatáskor kényszerített újrarajzolás (Repaint Glitch Fix)
+                // Elforgatási renderelési hiba javítása
                 if (!window.__repaintListenerAdded) {
                     window.__repaintListenerAdded = true;
                     window.addEventListener('orientationchange', function() {
