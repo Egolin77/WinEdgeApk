@@ -21,8 +21,6 @@ import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.webkit.WebSettingsCompat
-import androidx.webkit.WebViewFeature
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -90,13 +88,12 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView(target: WebView) {
         target.setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-        // Rendszer szintű Force-Dark kikapcsolása a pislákoló/kisötétülő szövegek ellen
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-            WebSettingsCompat.setForceDark(target.settings, WebSettingsCompat.FORCE_DARK_OFF)
-        }
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(target.settings, false)
-        }
+        // Biztonságos Force-Dark kikapcsolás (ha támogatja a WebView, kikapcsolja, ha nem, nem omlik össze)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                target.settings.forceDark = WebSettings.FORCE_DARK_OFF
+            }
+        } catch (_: Exception) {}
 
         target.settings.apply {
             javaScriptEnabled = true
@@ -235,9 +232,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 document.documentElement.style.touchAction='auto';
 
-                // Elforgatási renderelési hiba javítása
-                if (!window.__repaintListenerAdded) {
-                    window.__repaintListenerAdded = true;
+                // Elforgatási hiba elleni védőháló
+                if (!window.__repaintFixAdded) {
+                    window.__repaintFixAdded = true;
                     window.addEventListener('orientationchange', function() {
                         setTimeout(function() {
                             document.body.style.display = 'none';
