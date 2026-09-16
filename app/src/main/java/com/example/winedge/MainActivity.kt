@@ -82,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
-            textZoom = 100
+            textZoom = 90
             setSupportZoom(true)
             builtInZoomControls = false
             displayZoomControls = false
