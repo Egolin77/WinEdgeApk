@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             textZoom = 100
             setSupportZoom(true)
-            builtInZoomControls = false
+            builtInZoomControls = true
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
