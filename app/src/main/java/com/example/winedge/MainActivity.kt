@@ -84,8 +84,8 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             textZoom = 90
             setSupportZoom(true)
-            builtInZoomControls = false
-            displayZoomControls = false
+            builtInZoomControls = true
+            displayZoomControls = true
             javaScriptCanOpenWindowsAutomatically = true
             
             // Kikapcsolva, hogy a bejelentkezési popupok ugyanabban az ablakban nyíljanak meg
