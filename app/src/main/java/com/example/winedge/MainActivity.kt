@@ -91,10 +91,10 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
-            textZoom = 100
+            textZoom = 80
             setSupportZoom(true)
-            builtInZoomControls = false
-            displayZoomControls = false
+            builtInZoomControls = true
+            displayZoomControls = true
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(false)
             
