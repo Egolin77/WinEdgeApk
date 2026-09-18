@@ -91,7 +91,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = false
             layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
             
-            textZoom = 100
+            textZoom = 80
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
