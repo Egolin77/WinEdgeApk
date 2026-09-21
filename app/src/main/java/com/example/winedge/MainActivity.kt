@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://admin.cloud.microsoft/?#/homepage"
+    private val startUrl = "https://make.powerapps.com/"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
@@ -98,10 +98,10 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             useWideViewPort = true
             loadWithOverviewMode = true
-            textZoom = 100
+            textZoom = 50
             setSupportZoom(true)
             builtInZoomControls = true
-            displayZoomControls = false
+            displayZoomControls = true
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
             allowFileAccess = true
