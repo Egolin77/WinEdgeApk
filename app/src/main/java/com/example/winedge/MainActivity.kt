@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
             textZoom = 80
             setSupportZoom(true)
             builtInZoomControls = true
-            displayZoomControls = false
+            displayZoomControls = true
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
             allowFileAccess = true
