@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var pendingPermissionRequest: PermissionRequest? = null
-    private val startUrl = "https://make.powerapps.com/"
+    private val startUrl = "https://make.powerapps.com/environments/Default-753c5d99-05be-4237-b4c5-fdb2e6b32ab2/home?utm_source=office&utm_medium=app_launcher&utm_campaign=office_referrals"
 
     private val fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uris = if (result.resultCode == Activity.RESULT_OK) {
