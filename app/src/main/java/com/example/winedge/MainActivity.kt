@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
         pendingPermissionRequest = null
     }
 
-    // JavaScript híd osztály a Blob fájlok letöltéséhez
+    // JavaScript híd osztály a fájlok mentéséhez
     inner class WebAppInterface(private val context: Context) {
         @JavascriptInterface
         fun downloadBase64File(base64Data: String, filename: String, mimeType: String) {
@@ -107,54 +107,15 @@ class MainActivity : AppCompatActivity() {
         configureWebView(webView)
         configureCookies(webView)
 
-        // JavaScript interfész regisztrálása a letöltésekhez
+        // JavaScript interfész regisztrálása
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidDownloader")
 
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
 
-        // Letöltéskezelő (Blob és hagyományos fájlok támogatása)
+        // Hagyományos DownloadListener biztonsági mentésként
         webView.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-            if (url.startsWith("blob:")) {
-                val filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype) ?: "download_file"
-                val js = """
-                    (async function() {
-                        try {
-                            const response = await fetch('$url');
-                            const blob = await response.blob();
-                            const reader = new FileReader();
-                            reader.onload = function() {
-                                AndroidDownloader.downloadBase64File(reader.result, '$filename', '$mimetype');
-                            };
-                            reader.readAsDataURL(blob);
-                        } catch(e) { console.error(e); }
-                    })();
-                """.trimIndent()
-                webView.evaluateJavascript(js, null)
-            } else {
-                try {
-                    val request = DownloadManager.Request(Uri.parse(url)).apply {
-                        val cookies = CookieManager.getInstance().getCookie(url)
-                        addRequestHeader("cookie", cookies)
-                        addRequestHeader("User-Agent", userAgent)
-                        
-                        setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
-                        setDescription("Fájl letöltése...")
-                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
-                    }
-
-                    val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                    downloadManager.enqueue(request)
-                    
-                    Toast.makeText(applicationContext, "A letöltés elindult...", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        startActivity(intent)
-                    } catch (_: Exception) {}
-                }
-            }
+            processDownloadUrl(url, userAgent, contentDisposition, mimetype)
         })
 
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
@@ -166,6 +127,49 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    private fun processDownloadUrl(url: String, userAgent: String?, contentDisposition: String?, mimetype: String?) {
+        if (url.startsWith("blob:") || url.startsWith("data:")) {
+            val filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype) ?: "export_file"
+            val js = """
+                (async function() {
+                    try {
+                        const response = await fetch('$url');
+                        const blob = await response.blob();
+                        const reader = new FileReader();
+                        reader.onload = function() {
+                            AndroidDownloader.downloadBase64File(reader.result, '$filename', '$mimetype');
+                        };
+                        reader.readAsDataURL(blob);
+                    } catch(e) { console.error(e); }
+                })();
+            """.trimIndent()
+            webView.evaluateJavascript(js, null)
+        } else {
+            try {
+                val request = DownloadManager.Request(Uri.parse(url)).apply {
+                    val cookies = CookieManager.getInstance().getCookie(url)
+                    addRequestHeader("cookie", cookies)
+                    if (!userAgent.isNullOrEmpty()) addRequestHeader("User-Agent", userAgent)
+                    
+                    setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                    setDescription("Fájl letöltése...")
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                }
+
+                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                downloadManager.enqueue(request)
+                
+                Toast.makeText(applicationContext, "A letöltés elindult...", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -210,6 +214,12 @@ class MainActivity : AppCompatActivity() {
     private fun createWebViewClient(): WebViewClient {
         return object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url.toString()
+                // Ha a kattintott link letöltési kiterjesztésű vagy blob/data, elkapjuk
+                if (url.startsWith("blob:") || url.startsWith("data:") || url.contains("download") || url.endsWith(".csv") || url.endsWith(".xlsx") || url.endsWith(".pdf")) {
+                    processDownloadUrl(url, desktopChromeUserAgent, null, null)
+                    return true
+                }
                 return handleUrl(request.url)
             }
             override fun onPageFinished(view: WebView, url: String) {
@@ -288,15 +298,36 @@ class MainActivity : AppCompatActivity() {
     private fun injectDesktopMode(target: WebView) {
         val js = """
             (function(){try{
-            Object.defineProperty(navigator,'webdriver',{get:function(){return false;},configurable:true});
-            Object.defineProperty(window,'chrome',{get:function(){return{runtime:{}};},configurable:true});
-            if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:function(){return{
-            brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],
-            mobile:false,platform:'Windows',getHighEntropyValues:function(){return Promise.resolve({
-            brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],
-            fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}],
-            mobile:false,platform:'Windows',platformVersion:'10.0.0',architecture:'x86',bitness:'64',model:''
-            });}};},configurable:true});}
+                Object.defineProperty(navigator,'webdriver',{get:function(){return false;},configurable:true});
+                Object.defineProperty(window,'chrome',{get:function(){return{runtime:{}};},configurable:true});
+                if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:function(){return{
+                brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],
+                mobile:false,platform:'Windows',getHighEntropyValues:function(){return Promise.resolve({
+                brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],
+                fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}],
+                mobile:false,platform:'Windows',platformVersion:'10.0.0',architecture:'x86',bitness:'64',model:''
+                });}};},configurable:true});}
+
+                // Speciális JS elfogó a háttérben generált letöltésekhez és linkekhez
+                const originalCreateObjectURL = URL.createObjectURL;
+                URL.createObjectURL = function(obj) {
+                    const url = originalCreateObjectURL(obj);
+                    if (obj instanceof Blob || obj instanceof File) {
+                        // Ha blob jön létre, figyeljük, és ha letöltésre kattintanak, átadjuk
+                        window.addEventListener('click', function handler(e) {
+                            const target = e.target.closest('a');
+                            if (target && target.href === url) {
+                                e.preventDefault();
+                                reader = new FileReader();
+                                reader.onload = function() {
+                                    AndroidDownloader.downloadBase64File(reader.result, target.download || 'export_file', obj.type || 'application/octet-stream');
+                                };
+                                reader.readAsDataURL(obj);
+                            }
+                        }, {once: true});
+                    }
+                    return url;
+                };
             }catch(e){}})();
         """.trimIndent()
         target.evaluateJavascript(js, null)
