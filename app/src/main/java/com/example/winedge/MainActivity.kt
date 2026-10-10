@@ -2,12 +2,21 @@ package com.example.winedge
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Message
+import android.provider.MediaStore
+import android.util.Base64
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.DownloadListener
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -15,9 +24,11 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -42,6 +53,47 @@ class MainActivity : AppCompatActivity() {
         pendingPermissionRequest = null
     }
 
+    // JavaScript híd osztály a Blob fájlok letöltéséhez
+    inner class WebAppInterface(private val context: Context) {
+        @JavascriptInterface
+        fun downloadBase64File(base64Data: String, filename: String, mimeType: String) {
+            try {
+                val pureBase64 = base64Data.substringAfter("base64,")
+                val decodedBytes = Base64.decode(pureBase64, Base64.DEFAULT)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val resolver = context.contentResolver
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    uri?.let {
+                        resolver.openOutputStream(uri).use { outputStream ->
+                            outputStream?.write(decodedBytes)
+                        }
+                        contentValues.clear()
+                        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                        resolver.update(uri, contentValues, null, null)
+                    }
+                } else {
+                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    val file = File(downloadsDir, filename)
+                    file.writeBytes(decodedBytes)
+                }
+
+                runOnUiThread {
+                    Toast.makeText(context, "Sikeres letöltés: $filename", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(context, "Hiba a fájl mentésekor: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,8 +106,57 @@ class MainActivity : AppCompatActivity() {
         setContentView(webView)
         configureWebView(webView)
         configureCookies(webView)
+
+        // JavaScript interfész regisztrálása a letöltésekhez
+        webView.addJavascriptInterface(WebAppInterface(this), "AndroidDownloader")
+
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+
+        // Letöltéskezelő (Blob és hagyományos fájlok támogatása)
+        webView.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            if (url.startsWith("blob:")) {
+                val filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype) ?: "download_file"
+                val js = """
+                    (async function() {
+                        try {
+                            const response = await fetch('$url');
+                            const blob = await response.blob();
+                            const reader = new FileReader();
+                            reader.onload = function() {
+                                AndroidDownloader.downloadBase64File(reader.result, '$filename', '$mimetype');
+                            };
+                            reader.readAsDataURL(blob);
+                        } catch(e) { console.error(e); }
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(js, null)
+            } else {
+                try {
+                    val request = DownloadManager.Request(Uri.parse(url)).apply {
+                        val cookies = CookieManager.getInstance().getCookie(url)
+                        addRequestHeader("cookie", cookies)
+                        addRequestHeader("User-Agent", userAgent)
+                        
+                        setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                        setDescription("Fájl letöltése...")
+                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                    }
+
+                    val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    downloadManager.enqueue(request)
+                    
+                    Toast.makeText(applicationContext, "A letöltés elindult...", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        startActivity(intent)
+                    } catch (_: Exception) {}
+                }
+            }
+        })
+
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
