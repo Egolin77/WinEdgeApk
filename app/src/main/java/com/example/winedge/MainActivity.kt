@@ -53,7 +53,6 @@ class MainActivity : AppCompatActivity() {
         pendingPermissionRequest = null
     }
 
-    // JavaScript híd osztály a fájlok mentéséhez
     inner class WebAppInterface(private val context: Context) {
         @JavascriptInterface
         fun downloadBase64File(base64Data: String, filename: String, mimeType: String) {
@@ -107,13 +106,11 @@ class MainActivity : AppCompatActivity() {
         configureWebView(webView)
         configureCookies(webView)
 
-        // JavaScript interfész regisztrálása
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidDownloader")
 
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
 
-        // Hagyományos DownloadListener biztonsági mentésként
         webView.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
             processDownloadUrl(url, userAgent, contentDisposition, mimetype)
         })
@@ -131,7 +128,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun processDownloadUrl(url: String, userAgent: String?, contentDisposition: String?, mimetype: String?) {
         if (url.startsWith("blob:") || url.startsWith("data:")) {
-            val filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype) ?: "export_file"
+            val filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype) ?: "export_file.csv"
             val js = """
                 (async function() {
                     try {
@@ -148,15 +145,21 @@ class MainActivity : AppCompatActivity() {
             webView.evaluateJavascript(js, null)
         } else {
             try {
+                // Ha Talkdesk jobs / atlas letöltési hivatkozásról van szó, kiterjesztést adunk hozzá, ha hiányzik
+                var finalFilename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype)
+                if (finalFilename.contains("jobs") || !finalFilename.contains(".")) {
+                    finalFilename = "talkdesk_export.csv"
+                }
+
                 val request = DownloadManager.Request(Uri.parse(url)).apply {
                     val cookies = CookieManager.getInstance().getCookie(url)
                     addRequestHeader("cookie", cookies)
                     if (!userAgent.isNullOrEmpty()) addRequestHeader("User-Agent", userAgent)
                     
-                    setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
-                    setDescription("Fájl letöltése...")
+                    setTitle(finalFilename)
+                    setDescription("Fájl letöltése a Talkdesk felületről...")
                     setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, finalFilename)
                 }
 
                 val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -215,8 +218,8 @@ class MainActivity : AppCompatActivity() {
         return object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
-                // Ha a kattintott link letöltési kiterjesztésű vagy blob/data, elkapjuk
-                if (url.startsWith("blob:") || url.startsWith("data:") || url.contains("download") || url.endsWith(".csv") || url.endsWith(".xlsx") || url.endsWith(".pdf")) {
+                // Ha a Talkdesk atlas / jobs / export letöltési útvonalra kattintanak, elkapjuk és letöltjük
+                if (url.contains("/atlas/apps/") || url.contains("download") || url.startsWith("blob:") || url.startsWith("data:")) {
                     processDownloadUrl(url, desktopChromeUserAgent, null, null)
                     return true
                 }
@@ -307,27 +310,6 @@ class MainActivity : AppCompatActivity() {
                 fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}],
                 mobile:false,platform:'Windows',platformVersion:'10.0.0',architecture:'x86',bitness:'64',model:''
                 });}};},configurable:true});}
-
-                // Speciális JS elfogó a háttérben generált letöltésekhez és linkekhez
-                const originalCreateObjectURL = URL.createObjectURL;
-                URL.createObjectURL = function(obj) {
-                    const url = originalCreateObjectURL(obj);
-                    if (obj instanceof Blob || obj instanceof File) {
-                        // Ha blob jön létre, figyeljük, és ha letöltésre kattintanak, átadjuk
-                        window.addEventListener('click', function handler(e) {
-                            const target = e.target.closest('a');
-                            if (target && target.href === url) {
-                                e.preventDefault();
-                                reader = new FileReader();
-                                reader.onload = function() {
-                                    AndroidDownloader.downloadBase64File(reader.result, target.download || 'export_file', obj.type || 'application/octet-stream');
-                                };
-                                reader.readAsDataURL(obj);
-                            }
-                        }, {once: true});
-                    }
-                    return url;
-                };
             }catch(e){}})();
         """.trimIndent()
         target.evaluateJavascript(js, null)
