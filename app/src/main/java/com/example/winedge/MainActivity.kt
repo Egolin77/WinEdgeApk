@@ -2,13 +2,17 @@ package com.example.winedge
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Message
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.DownloadListener
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -16,6 +20,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -58,6 +63,34 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = createWebViewClient()
         webView.webChromeClient = createWebChromeClient()
+
+        // LETÖLTÉS KEZELŐ HOZZÁADÁSA
+        webView.setDownloadListener(DownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+            try {
+                val request = DownloadManager.Request(Uri.parse(url)).apply {
+                    // Sütik és User-Agent átadása, hogy a Microsoft felhő hitelesítve engedje a letöltést
+                    val cookies = CookieManager.getInstance().getCookie(url)
+                    addRequestHeader("cookie", cookies)
+                    addRequestHeader("User-Agent", userAgent)
+                    
+                    setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                    setDescription("Fájl letöltése a Microsoft felhőből...")
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype))
+                }
+
+                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                downloadManager.enqueue(request)
+                
+                Toast.makeText(applicationContext, "A letöltés elindult...", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                // Ha esetleg blob vagy direkt adat URL érkezne, küldjük tovább külső böngészőnek
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        })
 
         webView.loadUrl(intent.getStringExtra("open_url") ?: startUrl)
 
@@ -212,7 +245,7 @@ class MainActivity : AppCompatActivity() {
                 def(navigator,'vendor','Google Inc.');
                 def(navigator,'maxTouchPoints',0);
                 def(navigator,'hardwareConcurrency',8);
-                def(navigator,'deviceMemory',8);
+                def(navigator, 'deviceMemory',8);
                 def(navigator,'webdriver',false);
                 def(navigator,'language','en-US');
                 def(navigator,'languages',['en-US','en']);
