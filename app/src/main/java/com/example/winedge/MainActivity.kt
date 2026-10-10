@@ -97,6 +97,9 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = desktopChromeUserAgent.replace("; wv", "").replace("Version/4.0 ", "")
+            
+            // WebGL és hardveres kontextus stabilizálása
+            setGeolocationEnabled(true)
         }
     }
 
@@ -154,9 +157,6 @@ class MainActivity : AppCompatActivity() {
                 pendingPermissionRequest = request
                 permissionLauncher.launch(permissions.toTypedArray())
             }
-            
-            // Az onCreateWindow-ra már nincs szükség, mert a setSupportMultipleWindows(false) miatt 
-            // a rendszer automatikusan a meglévő ablakban kezeli az összes átirányítást.
         }
     }
 
@@ -173,12 +173,56 @@ class MainActivity : AppCompatActivity() {
 
     private fun injectDesktopMode(target: WebView) {
         val js = """
-            (function(){try{const ua='$desktopChromeUserAgent';const def=(o,p,v)=>Object.defineProperty(o,p,{get:()=>v,configurable:true});
-            def(navigator,'platform','Win32');def(navigator,'vendor','Google Inc.');def(navigator,'maxTouchPoints',0);def(navigator,'hardwareConcurrency',8);def(navigator,'deviceMemory',8);
-            def(navigator,'webdriver',false);def(navigator,'language','en-US');def(navigator,'languages',['en-US','en']);def(navigator,'userAgent',ua);
-            def(navigator,'appVersion','5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');def(window,'chrome',{runtime:{},app:{},webstore:{}});
-            if(navigator.userAgentData){Object.defineProperty(navigator,'userAgentData',{get:()=>({brands:[{brand:'Google Chrome',version:'138'},{brand:'Chromium',version:'138'},{brand:'Not-A.Brand',version:'99'}],mobile:false,platform:'Windows',getHighEntropyValues:()=>Promise.resolve({architecture:'x86',bitness:'64',mobile:false,model:'',platform:'Windows',platformVersion:'10.0.0',fullVersionList:[{brand:'Google Chrome',version:'138.0.0.0'},{brand:'Chromium',version:'138.0.0.0'},{brand:'Not-A.Brand',version:'99.0.0.0'}]})}),configurable:true});}
-            document.documentElement.style.touchAction='auto';}catch(e){}})();
+            (function(){
+                try {
+                    const ua = '$desktopChromeUserAgent';
+                    const def = (o, p, v) => Object.defineProperty(o, p, {get: () => v, configurable: true});
+                    
+                    def(navigator, 'platform', 'Win32');
+                    def(navigator, 'vendor', 'Google Inc.');
+                    def(navigator, 'maxTouchPoints', 0);
+                    def(navigator, 'hardwareConcurrency', 8);
+                    def(navigator, 'deviceMemory', 8);
+                    def(navigator, 'webdriver', false);
+                    def(navigator, 'language', 'en-US');
+                    def(navigator, 'languages', ['en-US', 'en']);
+                    def(navigator, 'userAgent', ua);
+                    def(navigator, 'appVersion', '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36');
+                    def(window, 'chrome', {runtime: {}, app: {}, webstore: {}});
+
+                    // WebGL / GPU renderelő kényszerítése, hogy a Google Earth ne akadjon el a hardverellenőrzésnél
+                    const getParameterOriginal = WebGLRenderingContext.prototype.getParameter;
+                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                        if (parameter === 37445) return 'Google Inc. (NVIDIA)';
+                        if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, Version 11.0.19041.1)';
+                        return getParameterOriginal.apply(this, arguments);
+                    };
+                    if (typeof WebGL2RenderingContext !== 'undefined') {
+                        const getParameterOriginal2 = WebGL2RenderingContext.prototype.getParameter;
+                        WebGL2RenderingContext.prototype.getParameter = function(parameter) {
+                            if (parameter === 37445) return 'Google Inc. (NVIDIA)';
+                            if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0, Version 11.0.19041.1)';
+                            return getParameterOriginal2.apply(this, arguments);
+                        };
+                    }
+
+                    if (navigator.userAgentData) {
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: () => ({
+                                brands: [{brand: 'Google Chrome', version: '138'}, {brand: 'Chromium', version: '138'}, {brand: 'Not-A.Brand', version: '99'}],
+                                mobile: false,
+                                platform: 'Windows',
+                                getHighEntropyValues: () => Promise.resolve({
+                                    architecture: 'x86', bitness: '64', mobile: false, model: '', platform: 'Windows', platformVersion: '10.0.0',
+                                    fullVersionList: [{brand: 'Google Chrome', version: '138.0.0.0'}, {brand: 'Chromium', version: '138.0.0.0'}, {brand: 'Not-A.Brand', version: '99.0.0.0'}]
+                                })
+                            }),
+                            configurable: true
+                        });
+                    }
+                    document.documentElement.style.touchAction = 'auto';
+                } catch(e) {}
+            })();
         """.trimIndent()
         target.evaluateJavascript(js, null)
     }
