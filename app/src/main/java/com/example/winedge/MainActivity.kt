@@ -106,6 +106,8 @@ class MainActivity : AppCompatActivity() {
         configureWebView(webView)
         configureCookies(webView)
 
+        popup.addJavascriptInterface(WebAppInterface(this@MainActivity),"AndroidDownloader")
+
         // JavaScript interfész regisztrálása a letöltésekhez
         webView.addJavascriptInterface(WebAppInterface(this), "AndroidDownloader")
 
